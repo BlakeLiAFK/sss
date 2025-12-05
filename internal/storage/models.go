@@ -6,6 +6,7 @@ import "time"
 type Bucket struct {
 	Name         string    `json:"name"`
 	CreationDate time.Time `json:"creation_date"`
+	IsPublic     bool      `json:"is_public"`     // 是否为公有桶
 }
 
 // Object 对象模型

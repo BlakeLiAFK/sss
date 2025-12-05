@@ -7,28 +7,60 @@
             <span>预签名URL生成器</span>
           </template>
 
-          <el-form :model="presignForm" label-width="100px">
+          <el-form :model="presignForm" label-width="120px">
             <el-form-item label="存储桶">
               <el-select v-model="presignForm.bucket" placeholder="选择存储桶" @change="loadBucketObjects">
                 <el-option v-for="b in buckets" :key="b.Name" :label="b.Name" :value="b.Name" />
               </el-select>
             </el-form-item>
-            <el-form-item label="对象">
-              <el-select v-model="presignForm.key" placeholder="选择对象" filterable>
-                <el-option v-for="o in bucketObjects" :key="o.Key" :label="o.Key" :value="o.Key" />
+
+            <el-form-item label="对象路径">
+              <el-input v-model="presignForm.key" placeholder="输入或选择对象路径">
+                <template #append>
+                  <el-select v-model="presignForm.key" placeholder="选择对象" style="width: 200px">
+                    <el-option v-for="o in bucketObjects" :key="o.Key" :label="o.Key" :value="o.Key" />
+                  </el-select>
+                </template>
+              </el-input>
+            </el-form-item>
+
+            <el-form-item label="HTTP方法">
+              <el-select v-model="presignForm.method">
+                <el-option label="PUT (上传)" value="PUT" />
+                <el-option label="GET (下载)" value="GET" />
+                <el-option label="DELETE (删除)" value="DELETE" />
+                <el-option label="HEAD (信息)" value="HEAD" />
               </el-select>
             </el-form-item>
+
             <el-form-item label="有效期">
-              <el-select v-model="presignForm.expires">
-                <el-option label="1小时" :value="3600" />
-                <el-option label="6小时" :value="21600" />
-                <el-option label="12小时" :value="43200" />
-                <el-option label="24小时" :value="86400" />
-                <el-option label="7天" :value="604800" />
+              <el-select v-model="presignForm.expiresMinutes">
+                <el-option label="15分钟" :value="15" />
+                <el-option label="1小时" :value="60" />
+                <el-option label="6小时" :value="360" />
+                <el-option label="12小时" :value="720" />
+                <el-option label="24小时" :value="1440" />
+                <el-option label="7天" :value="10080" />
               </el-select>
             </el-form-item>
+
+            <el-form-item label="大小限制(MB)">
+              <el-input-number
+                v-model="presignForm.maxSizeMB"
+                :min="0"
+                :max="1024"
+                placeholder="0=不限制"
+                style="width: 200px"
+              />
+            </el-form-item>
+
+            <el-form-item label="内容类型">
+              <el-input v-model="presignForm.contentType" placeholder="例如: image/jpeg" />
+            </el-form-item>
+
             <el-form-item>
-              <el-button type="primary" @click="generatePresignedUrl">生成URL</el-button>
+              <el-button type="primary" @click="handleGeneratePresignedUrl" :loading="generating">生成URL</el-button>
+              <el-button @click="clearForm">清空</el-button>
             </el-form-item>
           </el-form>
 
@@ -87,18 +119,22 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
-import { listBuckets, listObjects, type Bucket, type S3Object } from '../api/s3'
+import { listBuckets, listObjects, generatePresignedUrl, type Bucket, type S3Object } from '../api/s3'
 
 const auth = useAuthStore()
 
 const buckets = ref<Bucket[]>([])
 const bucketObjects = ref<S3Object[]>([])
 const presignedUrl = ref('')
+const generating = ref(false)
 
 const presignForm = reactive({
   bucket: '',
   key: '',
-  expires: 3600
+  method: 'PUT',
+  expiresMinutes: 60,
+  maxSizeMB: 0,
+  contentType: ''
 })
 
 const awsCliConfig = computed(() => {
@@ -136,29 +172,41 @@ async function loadBucketObjects() {
   }
 }
 
-function generatePresignedUrl() {
+async function handleGeneratePresignedUrl() {
   if (!presignForm.bucket || !presignForm.key) {
-    ElMessage.warning('请选择存储桶和对象')
+    ElMessage.warning('请输入存储桶和对象路径')
     return
   }
 
-  // 生成预签名URL（简化实现）
-  const now = new Date()
-  const dateStr = now.toISOString().replace(/[:-]|\.\d{3}/g, '').slice(0, 8)
-  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '')
+  generating.value = true
+  try {
+    // 调用从 api/s3 导入的 generatePresignedUrl 函数
+    const result = await generatePresignedUrl({
+      bucket: presignForm.bucket,
+      key: presignForm.key,
+      method: presignForm.method,
+      expiresMinutes: presignForm.expiresMinutes,
+      maxSizeMB: presignForm.maxSizeMB,
+      contentType: presignForm.contentType
+    })
 
-  const credential = `${auth.accessKeyId}/${dateStr}/${auth.region}/s3/aws4_request`
-  const params = new URLSearchParams({
-    'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
-    'X-Amz-Credential': credential,
-    'X-Amz-Date': amzDate,
-    'X-Amz-Expires': presignForm.expires.toString(),
-    'X-Amz-SignedHeaders': 'host',
-    'X-Amz-Signature': 'placeholder' // 真正的签名需要后端计算
-  })
+    presignedUrl.value = result.url
 
-  presignedUrl.value = `${auth.endpoint}/${presignForm.bucket}/${presignForm.key}?${params.toString()}`
-  ElMessage.info('注意：此为示例URL，实际使用需要服务端生成签名')
+    // 显示额外信息
+    let info = `成功生成${result.method}预签名URL`
+    if (presignForm.maxSizeMB > 0) {
+      info += `，最大限制${presignForm.maxSizeMB}MB`
+    }
+    if (presignForm.contentType) {
+      info += `，内容类型${presignForm.contentType}`
+    }
+    ElMessage.success(info)
+  } catch (error: any) {
+    console.error('生成预签名URL失败:', error)
+    ElMessage.error(error.response?.data?.message || '生成预签名URL失败')
+  } finally {
+    generating.value = false
+  }
 }
 
 function copyUrl() {
@@ -169,6 +217,17 @@ function copyUrl() {
 function copyAwsConfig() {
   navigator.clipboard.writeText(awsCliConfig.value)
   ElMessage.success('已复制到剪贴板')
+}
+
+function clearForm() {
+  presignForm.bucket = ''
+  presignForm.key = ''
+  presignForm.method = 'PUT'
+  presignForm.expiresMinutes = 60
+  presignForm.maxSizeMB = 0
+  presignForm.contentType = ''
+  presignedUrl.value = ''
+  bucketObjects.value = []
 }
 </script>
 

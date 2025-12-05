@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"sss/internal/config"
 	"sss/internal/storage"
 	"sss/internal/utils"
 )
@@ -98,10 +99,48 @@ func (s *Server) handlePutObject(w http.ResponseWriter, r *http.Request, bucket,
 		return
 	}
 
+	// 验证文件大小限制
+	query := r.URL.Query()
+
+	// 1. 检查预签名URL的大小限制（如果有）
+	if maxContentLengthStr := query.Get("X-Amz-Max-Content-Length"); maxContentLengthStr != "" {
+		maxContentLength, err := strconv.ParseInt(maxContentLengthStr, 10, 64)
+		if err == nil {
+			if r.ContentLength > 0 && r.ContentLength > maxContentLength {
+				utils.WriteError(w, utils.ErrEntityTooLarge, http.StatusBadRequest, "/"+bucket+"/"+key)
+				return
+			}
+		}
+	}
+
+	// 2. 检查全局最大上传大小限制
+	if config.Global.Storage.MaxUploadSize > 0 && r.ContentLength > 0 {
+		if r.ContentLength > config.Global.Storage.MaxUploadSize {
+			utils.WriteError(w, utils.ErrEntityTooLarge, http.StatusBadRequest, "/"+bucket+"/"+key)
+			return
+		}
+	}
+
+	// 3. 检查全局最大对象大小限制
+	if config.Global.Storage.MaxObjectSize > 0 && r.ContentLength > 0 {
+		if r.ContentLength > config.Global.Storage.MaxObjectSize {
+			utils.WriteError(w, utils.ErrEntityTooLarge, http.StatusBadRequest, "/"+bucket+"/"+key)
+			return
+		}
+	}
+
 	// 获取 Content-Type
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"
+	}
+
+	// 4. 验证内容类型限制（如果预签名URL指定了）
+	if expectedContentType := query.Get("X-Amz-Content-Type"); expectedContentType != "" {
+		if contentType != expectedContentType {
+			utils.WriteError(w, utils.ErrBadDigest, http.StatusBadRequest, "/"+bucket+"/"+key)
+			return
+		}
 	}
 
 	// 存储文件

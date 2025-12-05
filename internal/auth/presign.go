@@ -12,8 +12,22 @@ import (
 	"sss/internal/config"
 )
 
-// GeneratePresignedURL 生成预签名 URL
+// PresignOptions 预签名URL选项
+type PresignOptions struct {
+	MaxContentLength int64     // 最大内容长度（字节），0表示不限制
+	ContentType      string    // 限制内容类型
+	Expires          time.Duration // 过期时间
+}
+
+// GeneratePresignedURL 生成预签名 URL（向后兼容）
 func GeneratePresignedURL(method, bucket, key string, expires time.Duration) string {
+	return GeneratePresignedURLWithOptions(method, bucket, key, &PresignOptions{
+		Expires: expires,
+	})
+}
+
+// GeneratePresignedURLWithOptions 生成带选项的预签名 URL
+func GeneratePresignedURLWithOptions(method, bucket, key string, opts *PresignOptions) string {
 	cfg := config.Global
 
 	// 构建 URL
@@ -36,12 +50,33 @@ func GeneratePresignedURL(method, bucket, key string, expires time.Duration) str
 		"X-Amz-Algorithm":     {algorithm},
 		"X-Amz-Credential":    {credential},
 		"X-Amz-Date":          {amzDate},
-		"X-Amz-Expires":       {fmt.Sprintf("%d", int(expires.Seconds()))},
+		"X-Amz-Expires":       {fmt.Sprintf("%d", int(opts.Expires.Seconds()))},
 		"X-Amz-SignedHeaders": {"host"},
+	}
+
+	// 添加内容长度限制（如果指定）
+	if opts.MaxContentLength > 0 {
+		// 确保不超过全局限制
+		maxLength := opts.MaxContentLength
+		if cfg.Storage.MaxUploadSize > 0 && maxLength > cfg.Storage.MaxUploadSize {
+			maxLength = cfg.Storage.MaxUploadSize
+		}
+		params.Add("X-Amz-Max-Content-Length", fmt.Sprintf("%d", maxLength))
+	}
+
+	// 添加内容类型限制（如果指定）
+	if opts.ContentType != "" {
+		params.Add("X-Amz-Content-Type", opts.ContentType)
 	}
 
 	// 规范查询字符串
 	canonicalQuery := getCanonicalQueryStringForPresign(params)
+
+	// 构建签名头
+	signedHeaders := "host"
+	if opts.ContentType != "" {
+		signedHeaders = "host;content-type"
+	}
 
 	// 规范请求
 	canonicalHeaders := fmt.Sprintf("host:%s\n", host)
@@ -50,7 +85,7 @@ func GeneratePresignedURL(method, bucket, key string, expires time.Duration) str
 		path,
 		canonicalQuery,
 		canonicalHeaders,
-		"host",
+		signedHeaders,
 		unsignedPayload,
 	)
 

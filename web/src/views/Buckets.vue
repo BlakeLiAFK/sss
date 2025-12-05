@@ -4,10 +4,16 @@
       <template #header>
         <div class="card-header">
           <span>存储桶列表</span>
-          <el-button type="primary" @click="showCreateDialog = true">
-            <el-icon><Plus /></el-icon>
-            创建存储桶
-          </el-button>
+          <div class="header-actions">
+            <el-button type="success" @click="handleRefresh" :loading="loading">
+              <el-icon><Refresh /></el-icon>
+              刷新
+            </el-button>
+            <el-button type="primary" @click="showCreateDialog = true">
+              <el-icon><Plus /></el-icon>
+              创建存储桶
+            </el-button>
+          </div>
         </div>
       </template>
 
@@ -23,6 +29,17 @@
         <el-table-column prop="CreationDate" label="创建时间" width="200">
           <template #default="{ row }">
             {{ formatDate(row.CreationDate) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="访问权限" width="150">
+          <template #default="{ row }">
+            <el-switch
+              v-model="row.IsPublic"
+              @change="(value) => handleTogglePublic(row.Name, value)"
+              active-text="公有"
+              inactive-text="私有"
+              :loading="row.toggling"
+            />
           </template>
         </el-table-column>
         <el-table-column label="操作" width="120">
@@ -52,7 +69,8 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { listBuckets, createBucket, deleteBucket, type Bucket } from '../api/s3'
+import { Refresh, Plus, Folder } from '@element-plus/icons-vue'
+import { listBuckets, createBucket, deleteBucket, setBucketPublic, type Bucket } from '../api/s3'
 
 const buckets = ref<Bucket[]>([])
 const loading = ref(false)
@@ -103,6 +121,33 @@ async function handleDelete(name: string) {
       ElMessage.error('删除失败: ' + e.message)
     }
   }
+}
+
+async function handleTogglePublic(bucketName: string, isPublic: boolean) {
+  // 找到对应的桶
+  const bucket = buckets.value.find(b => b.Name === bucketName)
+  if (bucket) {
+    bucket.toggling = true
+  }
+
+  try {
+    await setBucketPublic(bucketName, isPublic)
+    ElMessage.success(`已设置为${isPublic ? '公有' : '私有'}`)
+  } catch (e: any) {
+    // 恢复原状态
+    if (bucket) {
+      bucket.IsPublic = !isPublic
+    }
+    ElMessage.error('设置失败: ' + (e.response?.data?.message || e.message))
+  } finally {
+    if (bucket) {
+      bucket.toggling = false
+    }
+  }
+}
+
+async function handleRefresh() {
+  await loadBuckets()
 }
 
 function formatDate(dateStr: string): string {

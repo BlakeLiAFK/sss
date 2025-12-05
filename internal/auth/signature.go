@@ -251,7 +251,14 @@ func verifyPresignedURL(r *http.Request) bool {
 		}
 	}
 
-	canonicalURI := getCanonicalURI(r.URL.Path)
+	// 对URL路径进行解码，因为浏览器会自动编码中文字符
+	// 但生成预签名URL时使用的是原始未编码的路径
+	decodedPath, err := url.PathUnescape(r.URL.Path)
+	if err != nil {
+		utils.Debug("failed to decode path", "path", r.URL.Path, "error", err)
+		decodedPath = r.URL.Path // 解码失败则使用原路径
+	}
+	canonicalURI := decodedPath
 	canonicalQuery := getCanonicalQueryString(queryWithoutSig)
 
 	headerList := strings.Split(signedHeaders, ";")

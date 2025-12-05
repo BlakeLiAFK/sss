@@ -34,7 +34,8 @@ func (m *MetadataStore) initTables() error {
 	schemas := []string{
 		`CREATE TABLE IF NOT EXISTS buckets (
 			name TEXT PRIMARY KEY,
-			creation_date DATETIME NOT NULL
+			creation_date DATETIME NOT NULL,
+			is_public INTEGER DEFAULT 0
 		)`,
 		`CREATE TABLE IF NOT EXISTS objects (
 			bucket TEXT NOT NULL,
@@ -73,6 +74,25 @@ func (m *MetadataStore) initTables() error {
 			return fmt.Errorf("failed to create table: %w", err)
 		}
 	}
+
+	// 检查并添加is_public列（用于兼容现有数据）
+	var columnExists bool
+	err := m.db.QueryRow(`
+		SELECT COUNT(*) > 0
+		FROM pragma_table_info('buckets')
+		WHERE name = 'is_public'
+	`).Scan(&columnExists)
+
+	if err != nil {
+		return fmt.Errorf("check column failed: %v", err)
+	}
+
+	if !columnExists {
+		if _, err := m.db.Exec("ALTER TABLE buckets ADD COLUMN is_public INTEGER DEFAULT 0"); err != nil {
+			return fmt.Errorf("add is_public column failed: %v", err)
+		}
+	}
+
 	return nil
 }
 
@@ -85,8 +105,8 @@ func (m *MetadataStore) Close() error {
 
 func (m *MetadataStore) CreateBucket(name string) error {
 	_, err := m.db.Exec(
-		"INSERT INTO buckets (name, creation_date) VALUES (?, ?)",
-		name, time.Now().UTC(),
+		"INSERT INTO buckets (name, creation_date, is_public) VALUES (?, ?, ?)",
+		name, time.Now().UTC(), 0, // 默认私有
 	)
 	return err
 }
@@ -106,8 +126,8 @@ func (m *MetadataStore) DeleteBucket(name string) error {
 func (m *MetadataStore) GetBucket(name string) (*Bucket, error) {
 	var bucket Bucket
 	err := m.db.QueryRow(
-		"SELECT name, creation_date FROM buckets WHERE name = ?", name,
-	).Scan(&bucket.Name, &bucket.CreationDate)
+		"SELECT name, creation_date, is_public FROM buckets WHERE name = ?", name,
+	).Scan(&bucket.Name, &bucket.CreationDate, &bucket.IsPublic)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -115,7 +135,7 @@ func (m *MetadataStore) GetBucket(name string) (*Bucket, error) {
 }
 
 func (m *MetadataStore) ListBuckets() ([]Bucket, error) {
-	rows, err := m.db.Query("SELECT name, creation_date FROM buckets ORDER BY name")
+	rows, err := m.db.Query("SELECT name, creation_date, is_public FROM buckets ORDER BY name")
 	if err != nil {
 		return nil, err
 	}
@@ -124,12 +144,21 @@ func (m *MetadataStore) ListBuckets() ([]Bucket, error) {
 	var buckets []Bucket
 	for rows.Next() {
 		var b Bucket
-		if err := rows.Scan(&b.Name, &b.CreationDate); err != nil {
+		if err := rows.Scan(&b.Name, &b.CreationDate, &b.IsPublic); err != nil {
 			return nil, err
 		}
 		buckets = append(buckets, b)
 	}
 	return buckets, nil
+}
+
+// UpdateBucketPublic 设置桶的公有/私有状态
+func (m *MetadataStore) UpdateBucketPublic(name string, isPublic bool) error {
+	_, err := m.db.Exec(
+		"UPDATE buckets SET is_public = ? WHERE name = ?",
+		isPublic, name,
+	)
+	return err
 }
 
 // === Object 操作 ===

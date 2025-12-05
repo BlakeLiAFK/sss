@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"net/http"
 )
@@ -27,6 +28,10 @@ var (
 	ErrInvalidPart          = S3Error{Code: "InvalidPart", Message: "One or more of the specified parts could not be found"}
 	ErrInvalidArgument      = S3Error{Code: "InvalidArgument", Message: "Invalid Argument"}
 	ErrInternalError        = S3Error{Code: "InternalError", Message: "We encountered an internal error. Please try again."}
+	ErrMethodNotAllowed     = S3Error{Code: "MethodNotAllowed", Message: "The specified method is not allowed against this resource"}
+	ErrMalformedJSON        = S3Error{Code: "MalformedJSON", Message: "The JSON provided was not well-formed"}
+	ErrEntityTooLarge      = S3Error{Code: "EntityTooLarge", Message: "Your proposed upload exceeds the maximum allowed size"}
+	ErrBadDigest           = S3Error{Code: "BadDigest", Message: "The Content-MD5 you specified did not match what we received"}
 )
 
 // WriteError 写入错误响应
@@ -50,4 +55,26 @@ func WriteXML(w http.ResponseWriter, statusCode int, v interface{}) {
 // GenerateRequestID 生成请求ID
 func GenerateRequestID() string {
 	return GenerateID(16)
+}
+
+// ParseJSONBody 解析JSON请求体
+func ParseJSONBody(r *http.Request, v interface{}) error {
+	defer r.Body.Close()
+	return json.NewDecoder(r.Body).Decode(v)
+}
+
+// WriteJSONResponse 写入JSON响应
+func WriteJSONResponse(w http.ResponseWriter, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
+// WriteErrorResponse 写入JSON错误响应
+func WriteErrorResponse(w http.ResponseWriter, code, message string, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(map[string]string{
+		"error":   code,
+		"message": message,
+	})
 }

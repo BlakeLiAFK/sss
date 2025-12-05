@@ -2,7 +2,7 @@ import axios from 'axios'
 import { useAuthStore } from '../stores/auth'
 
 // AWS Signature V4
-async function sign(method: string, path: string, headers: Record<string, string>, body?: string): Promise<Record<string, string>> {
+async function sign(method: string, path: string, headers: Record<string, string>, body?: string): Promise<{ headers: Record<string, string>, url: string }> {
   const auth = useAuthStore()
   const now = new Date()
   const dateStr = now.toISOString().replace(/[:-]|\.\d{3}/g, '').slice(0, 8)
@@ -14,7 +14,7 @@ async function sign(method: string, path: string, headers: Record<string, string
   const url = new URL(path, auth.endpoint)
   const host = url.host
 
-  headers['host'] = host
+  // 注意：host头部由浏览器自动设置，但签名仍需要包含它
   headers['x-amz-date'] = amzDate
   headers['x-amz-content-sha256'] = payloadHash
 
@@ -37,7 +37,7 @@ async function sign(method: string, path: string, headers: Record<string, string
 
   headers['Authorization'] = `AWS4-HMAC-SHA256 Credential=${auth.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
 
-  return headers
+  return { headers, url: url.toString() }
 }
 
 async function sha256(message: string): Promise<string> {
@@ -60,6 +60,8 @@ async function hmacSHA256Hex(key: Uint8Array, message: string): Promise<string> 
 export interface Bucket {
   Name: string
   CreationDate: string
+  IsPublic?: boolean
+  toggling?: boolean // 加载状态
 }
 
 export interface S3Object {
@@ -72,9 +74,9 @@ export interface S3Object {
 // 列出所有桶
 export async function listBuckets(): Promise<Bucket[]> {
   const auth = useAuthStore()
-  const headers = await sign('GET', '/', {})
+  const { headers, url } = await sign('GET', '/', {})
 
-  const resp = await axios.get(auth.endpoint, { headers })
+  const resp = await axios.get(url, { headers })
   const parser = new DOMParser()
   const doc = parser.parseFromString(resp.data, 'text/xml')
 
@@ -82,35 +84,44 @@ export async function listBuckets(): Promise<Bucket[]> {
   doc.querySelectorAll('Bucket').forEach(node => {
     buckets.push({
       Name: node.querySelector('Name')?.textContent || '',
-      CreationDate: node.querySelector('CreationDate')?.textContent || ''
+      CreationDate: node.querySelector('CreationDate')?.textContent || '',
+      IsPublic: false // 默认为私有，稍后更新
     })
   })
+
+  // 并行获取每个桶的公有状态
+  await Promise.all(buckets.map(async (bucket) => {
+    try {
+      bucket.IsPublic = await getBucketPublic(bucket.Name)
+    } catch (e) {
+      // 获取失败，保持默认值
+      console.warn(`Failed to get bucket ${bucket.Name} public status:`, e)
+    }
+  }))
+
   return buckets
 }
 
 // 创建桶
 export async function createBucket(name: string): Promise<void> {
-  const auth = useAuthStore()
-  const headers = await sign('PUT', `/${name}`, {})
-  await axios.put(`${auth.endpoint}/${name}`, null, { headers })
+  const { headers, url } = await sign('PUT', `/${name}`, {})
+  await axios.put(url, null, { headers })
 }
 
 // 删除桶
 export async function deleteBucket(name: string): Promise<void> {
-  const auth = useAuthStore()
-  const headers = await sign('DELETE', `/${name}`, {})
-  await axios.delete(`${auth.endpoint}/${name}`, { headers })
+  const { headers, url } = await sign('DELETE', `/${name}`, {})
+  await axios.delete(url, { headers })
 }
 
 // 列出对象
 export async function listObjects(bucket: string, prefix = '', marker = ''): Promise<{ objects: S3Object[], isTruncated: boolean, nextMarker: string }> {
-  const auth = useAuthStore()
   let path = `/${bucket}?list-type=2&max-keys=100`
   if (prefix) path += `&prefix=${encodeURIComponent(prefix)}`
   if (marker) path += `&continuation-token=${encodeURIComponent(marker)}`
 
-  const headers = await sign('GET', path, {})
-  const resp = await axios.get(`${auth.endpoint}${path}`, { headers })
+  const { headers, url } = await sign('GET', path, {})
+  const resp = await axios.get(url, { headers })
 
   const parser = new DOMParser()
   const doc = parser.parseFromString(resp.data, 'text/xml')
@@ -134,9 +145,8 @@ export async function listObjects(bucket: string, prefix = '', marker = ''): Pro
 
 // 删除对象
 export async function deleteObject(bucket: string, key: string): Promise<void> {
-  const auth = useAuthStore()
-  const headers = await sign('DELETE', `/${bucket}/${key}`, {})
-  await axios.delete(`${auth.endpoint}/${bucket}/${key}`, { headers })
+  const { headers, url } = await sign('DELETE', `/${bucket}/${key}`, {})
+  await axios.delete(url, { headers })
 }
 
 // 获取对象下载URL（简单实现，实际应使用预签名URL）
@@ -147,8 +157,6 @@ export function getObjectUrl(bucket: string, key: string): string {
 
 // 上传对象
 export async function uploadObject(bucket: string, key: string, file: File, onProgress?: (percent: number) => void): Promise<void> {
-  const auth = useAuthStore()
-
   const headers: Record<string, string> = {
     'Content-Type': file.type || 'application/octet-stream'
   }
@@ -157,20 +165,36 @@ export async function uploadObject(bucket: string, key: string, file: File, onPr
   const content = await file.arrayBuffer()
   const contentHash = await sha256ArrayBuffer(content)
 
+  // 使用专用的上传签名函数，因为内容哈希不同
+  const { headers: signedHeaders, url } = await signUpload('PUT', `/${bucket}/${key}`, headers, contentHash)
+
+  await axios.put(url, content, {
+    headers: signedHeaders,
+    onUploadProgress: (e) => {
+      if (onProgress && e.total) {
+        onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+    }
+  })
+}
+
+// 专用于上传的签名函数，接受预计算的内容哈希
+async function signUpload(method: string, path: string, headers: Record<string, string>, contentHash: string): Promise<{ headers: Record<string, string>, url: string }> {
+  const auth = useAuthStore()
   const now = new Date()
   const dateStr = now.toISOString().replace(/[:-]|\.\d{3}/g, '').slice(0, 8)
   const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '')
 
-  const url = new URL(`/${bucket}/${key}`, auth.endpoint)
+  const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date'
+
+  const url = new URL(path, auth.endpoint)
   const host = url.host
 
-  headers['host'] = host
   headers['x-amz-date'] = amzDate
   headers['x-amz-content-sha256'] = contentHash
 
-  const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date'
   const canonicalHeaders = `content-type:${headers['Content-Type']}\nhost:${host}\nx-amz-content-sha256:${contentHash}\nx-amz-date:${amzDate}\n`
-  const canonicalRequest = ['PUT', url.pathname, '', canonicalHeaders, signedHeaders, contentHash].join('\n')
+  const canonicalRequest = [method, url.pathname, '', canonicalHeaders, signedHeaders, contentHash].join('\n')
 
   const scope = `${dateStr}/${auth.region}/s3/aws4_request`
   const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, await sha256(canonicalRequest)].join('\n')
@@ -183,17 +207,72 @@ export async function uploadObject(bucket: string, key: string, file: File, onPr
 
   headers['Authorization'] = `AWS4-HMAC-SHA256 Credential=${auth.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
 
-  await axios.put(`${auth.endpoint}/${bucket}/${key}`, content, {
-    headers,
-    onUploadProgress: (e) => {
-      if (onProgress && e.total) {
-        onProgress(Math.round((e.loaded / e.total) * 100))
-      }
-    }
-  })
+  return { headers, url: url.toString() }
 }
 
 async function sha256ArrayBuffer(buffer: ArrayBuffer): Promise<string> {
   const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
   return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// 预签名URL选项
+interface PresignOptions {
+  method?: string
+  bucket: string
+  key: string
+  expiresMinutes?: number
+  maxSizeMB?: number
+  contentType?: string
+}
+
+// 预签名URL响应
+interface PresignResponse {
+  url: string
+  method: string
+  expires: number
+}
+
+// 生成预签名URL
+export async function generatePresignedUrl(options: PresignOptions): Promise<PresignResponse> {
+  const auth = useAuthStore()
+
+  const requestBody = {
+    method: options.method || 'PUT',
+    bucket: options.bucket,
+    key: options.key,
+    expiresMinutes: options.expiresMinutes || 60,
+    maxSizeMB: options.maxSizeMB || 0,
+    contentType: options.contentType || ''
+  }
+
+  const resp = await axios.post(`${auth.endpoint}/api/presign`, requestBody, {
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+
+  return resp.data
+}
+
+// 设置桶公有/私有状态
+export async function setBucketPublic(bucketName: string, isPublic: boolean): Promise<boolean> {
+  const auth = useAuthStore()
+
+  const resp = await axios.put(`${auth.endpoint}/api/bucket/${bucketName}/public`, {
+    is_public: isPublic
+  }, {
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+
+  return resp.data.is_public
+}
+
+// 获取桶公有/私有状态
+export async function getBucketPublic(bucketName: string): Promise<boolean> {
+  const auth = useAuthStore()
+
+  const resp = await axios.get(`${auth.endpoint}/api/bucket/${bucketName}/public`)
+  return resp.data.is_public
 }

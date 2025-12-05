@@ -10,16 +10,16 @@
 
       <el-form :model="form" :rules="rules" ref="formRef" label-width="120px">
         <el-form-item label="Endpoint" prop="endpoint">
-          <el-input v-model="form.endpoint" placeholder="http://localhost:9000" />
+          <el-input v-model="form.endpoint" placeholder="http://localhost:8080" />
         </el-form-item>
         <el-form-item label="Region" prop="region">
           <el-input v-model="form.region" placeholder="us-east-1" />
         </el-form-item>
         <el-form-item label="Access Key ID" prop="accessKeyId">
-          <el-input v-model="form.accessKeyId" placeholder="minioadmin" />
+          <el-input v-model="form.accessKeyId" placeholder="admin" />
         </el-form-item>
         <el-form-item label="Secret Key" prop="secretAccessKey">
-          <el-input v-model="form.secretAccessKey" type="password" placeholder="minioadmin" show-password />
+          <el-input v-model="form.secretAccessKey" type="password" placeholder="admin" show-password />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleLogin" :loading="loading" style="width: 100%">
@@ -44,10 +44,10 @@ const formRef = ref<FormInstance>()
 const loading = ref(false)
 
 const form = reactive({
-  endpoint: auth.endpoint || 'http://localhost:9000',
+  endpoint: auth.endpoint || 'http://localhost:8080',
   region: auth.region || 'us-east-1',
-  accessKeyId: auth.accessKeyId || 'minioadmin',
-  secretAccessKey: auth.secretAccessKey || 'minioadmin'
+  accessKeyId: auth.accessKeyId || 'admin',
+  secretAccessKey: auth.secretAccessKey || 'admin'
 })
 
 const rules = {

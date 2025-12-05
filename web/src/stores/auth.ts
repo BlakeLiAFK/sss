@@ -2,9 +2,9 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
 export const useAuthStore = defineStore('auth', () => {
-  const accessKeyId = ref(localStorage.getItem('accessKeyId') || '')
-  const secretAccessKey = ref(localStorage.getItem('secretAccessKey') || '')
-  const endpoint = ref(localStorage.getItem('endpoint') || 'http://localhost:9000')
+  const accessKeyId = ref(localStorage.getItem('accessKeyId') || 'admin')
+  const secretAccessKey = ref(localStorage.getItem('secretAccessKey') || 'admin')
+  const endpoint = ref(localStorage.getItem('endpoint') || 'http://localhost:8080')
   const region = ref(localStorage.getItem('region') || 'us-east-1')
 
   const isLoggedIn = computed(() => accessKeyId.value !== '' && secretAccessKey.value !== '')
