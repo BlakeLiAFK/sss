@@ -1,0 +1,15 @@
+server:
+  host: "0.0.0.0"
+  port: 9000
+  region: "us-east-1"
+
+storage:
+  data_path: "./data/buckets"
+  db_path: "./data/metadata.db"
+
+auth:
+  access_key_id: "minioadmin"
+  secret_access_key: "minioadmin"
+
+log:
+  level: "info"

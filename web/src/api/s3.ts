@@ -1,0 +1,199 @@
+import axios from 'axios'
+import { useAuthStore } from '../stores/auth'
+
+// AWS Signature V4
+async function sign(method: string, path: string, headers: Record<string, string>, body?: string): Promise<Record<string, string>> {
+  const auth = useAuthStore()
+  const now = new Date()
+  const dateStr = now.toISOString().replace(/[:-]|\.\d{3}/g, '').slice(0, 8)
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '')
+
+  const signedHeaders = 'host;x-amz-content-sha256;x-amz-date'
+  const payloadHash = body ? await sha256(body) : 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+
+  const url = new URL(path, auth.endpoint)
+  const host = url.host
+
+  headers['host'] = host
+  headers['x-amz-date'] = amzDate
+  headers['x-amz-content-sha256'] = payloadHash
+
+  // 规范请求
+  const canonicalUri = url.pathname || '/'
+  const canonicalQuery = url.search ? url.search.slice(1).split('&').sort().join('&') : ''
+  const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`
+  const canonicalRequest = [method, canonicalUri, canonicalQuery, canonicalHeaders, signedHeaders, payloadHash].join('\n')
+
+  // 待签名字符串
+  const scope = `${dateStr}/${auth.region}/s3/aws4_request`
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, await sha256(canonicalRequest)].join('\n')
+
+  // 计算签名
+  const kDate = await hmacSHA256(new TextEncoder().encode('AWS4' + auth.secretAccessKey), dateStr)
+  const kRegion = await hmacSHA256(kDate, auth.region)
+  const kService = await hmacSHA256(kRegion, 's3')
+  const kSigning = await hmacSHA256(kService, 'aws4_request')
+  const signature = await hmacSHA256Hex(kSigning, stringToSign)
+
+  headers['Authorization'] = `AWS4-HMAC-SHA256 Credential=${auth.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
+
+  return headers
+}
+
+async function sha256(message: string): Promise<string> {
+  const msgBuffer = new TextEncoder().encode(message)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer)
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+async function hmacSHA256(key: Uint8Array | ArrayBuffer, message: string): Promise<Uint8Array> {
+  const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const sig = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(message))
+  return new Uint8Array(sig)
+}
+
+async function hmacSHA256Hex(key: Uint8Array, message: string): Promise<string> {
+  const sig = await hmacSHA256(key, message)
+  return Array.from(sig).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+export interface Bucket {
+  Name: string
+  CreationDate: string
+}
+
+export interface S3Object {
+  Key: string
+  LastModified: string
+  ETag: string
+  Size: number
+}
+
+// 列出所有桶
+export async function listBuckets(): Promise<Bucket[]> {
+  const auth = useAuthStore()
+  const headers = await sign('GET', '/', {})
+
+  const resp = await axios.get(auth.endpoint, { headers })
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(resp.data, 'text/xml')
+
+  const buckets: Bucket[] = []
+  doc.querySelectorAll('Bucket').forEach(node => {
+    buckets.push({
+      Name: node.querySelector('Name')?.textContent || '',
+      CreationDate: node.querySelector('CreationDate')?.textContent || ''
+    })
+  })
+  return buckets
+}
+
+// 创建桶
+export async function createBucket(name: string): Promise<void> {
+  const auth = useAuthStore()
+  const headers = await sign('PUT', `/${name}`, {})
+  await axios.put(`${auth.endpoint}/${name}`, null, { headers })
+}
+
+// 删除桶
+export async function deleteBucket(name: string): Promise<void> {
+  const auth = useAuthStore()
+  const headers = await sign('DELETE', `/${name}`, {})
+  await axios.delete(`${auth.endpoint}/${name}`, { headers })
+}
+
+// 列出对象
+export async function listObjects(bucket: string, prefix = '', marker = ''): Promise<{ objects: S3Object[], isTruncated: boolean, nextMarker: string }> {
+  const auth = useAuthStore()
+  let path = `/${bucket}?list-type=2&max-keys=100`
+  if (prefix) path += `&prefix=${encodeURIComponent(prefix)}`
+  if (marker) path += `&continuation-token=${encodeURIComponent(marker)}`
+
+  const headers = await sign('GET', path, {})
+  const resp = await axios.get(`${auth.endpoint}${path}`, { headers })
+
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(resp.data, 'text/xml')
+
+  const objects: S3Object[] = []
+  doc.querySelectorAll('Contents').forEach(node => {
+    objects.push({
+      Key: node.querySelector('Key')?.textContent || '',
+      LastModified: node.querySelector('LastModified')?.textContent || '',
+      ETag: node.querySelector('ETag')?.textContent || '',
+      Size: parseInt(node.querySelector('Size')?.textContent || '0')
+    })
+  })
+
+  return {
+    objects,
+    isTruncated: doc.querySelector('IsTruncated')?.textContent === 'true',
+    nextMarker: doc.querySelector('NextContinuationToken')?.textContent || ''
+  }
+}
+
+// 删除对象
+export async function deleteObject(bucket: string, key: string): Promise<void> {
+  const auth = useAuthStore()
+  const headers = await sign('DELETE', `/${bucket}/${key}`, {})
+  await axios.delete(`${auth.endpoint}/${bucket}/${key}`, { headers })
+}
+
+// 获取对象下载URL（简单实现，实际应使用预签名URL）
+export function getObjectUrl(bucket: string, key: string): string {
+  const auth = useAuthStore()
+  return `${auth.endpoint}/${bucket}/${key}`
+}
+
+// 上传对象
+export async function uploadObject(bucket: string, key: string, file: File, onProgress?: (percent: number) => void): Promise<void> {
+  const auth = useAuthStore()
+
+  const headers: Record<string, string> = {
+    'Content-Type': file.type || 'application/octet-stream'
+  }
+
+  // 读取文件内容用于签名
+  const content = await file.arrayBuffer()
+  const contentHash = await sha256ArrayBuffer(content)
+
+  const now = new Date()
+  const dateStr = now.toISOString().replace(/[:-]|\.\d{3}/g, '').slice(0, 8)
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '')
+
+  const url = new URL(`/${bucket}/${key}`, auth.endpoint)
+  const host = url.host
+
+  headers['host'] = host
+  headers['x-amz-date'] = amzDate
+  headers['x-amz-content-sha256'] = contentHash
+
+  const signedHeaders = 'content-type;host;x-amz-content-sha256;x-amz-date'
+  const canonicalHeaders = `content-type:${headers['Content-Type']}\nhost:${host}\nx-amz-content-sha256:${contentHash}\nx-amz-date:${amzDate}\n`
+  const canonicalRequest = ['PUT', url.pathname, '', canonicalHeaders, signedHeaders, contentHash].join('\n')
+
+  const scope = `${dateStr}/${auth.region}/s3/aws4_request`
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, await sha256(canonicalRequest)].join('\n')
+
+  const kDate = await hmacSHA256(new TextEncoder().encode('AWS4' + auth.secretAccessKey), dateStr)
+  const kRegion = await hmacSHA256(kDate, auth.region)
+  const kService = await hmacSHA256(kRegion, 's3')
+  const kSigning = await hmacSHA256(kService, 'aws4_request')
+  const signature = await hmacSHA256Hex(kSigning, stringToSign)
+
+  headers['Authorization'] = `AWS4-HMAC-SHA256 Credential=${auth.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
+
+  await axios.put(`${auth.endpoint}/${bucket}/${key}`, content, {
+    headers,
+    onUploadProgress: (e) => {
+      if (onProgress && e.total) {
+        onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+    }
+  })
+}
+
+async function sha256ArrayBuffer(buffer: ArrayBuffer): Promise<string> {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+}

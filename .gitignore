@@ -1,0 +1,30 @@
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+sss
+
+# Data
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Web
+web/node_modules/
+web/dist/
+web/.vite/
+
+# Logs
+*.log
