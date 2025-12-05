@@ -196,9 +196,14 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "GET" && key != "":
 		s.handleGetObject(w, r, bucket, key)
 
-	// PutObject - PUT /{bucket}/{key}
+	// PutObject or CopyObject - PUT /{bucket}/{key}
 	case r.Method == "PUT" && key != "":
-		s.handlePutObject(w, r, bucket, key)
+		// 检查是否是复制操作（有 x-amz-copy-source 头）
+		if r.Header.Get("x-amz-copy-source") != "" {
+			s.handleCopyObject(w, r, bucket, key)
+		} else {
+			s.handlePutObject(w, r, bucket, key)
+		}
 
 	// DeleteObject - DELETE /{bucket}/{key}
 	case r.Method == "DELETE" && key != "":
@@ -237,6 +242,9 @@ func (s *Server) handlePresign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 验证请求体大小限制（防止大请求攻击）
+	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024) // 最大1MB
+
 	var req PresignRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
 		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
@@ -246,6 +254,16 @@ func (s *Server) handlePresign(w http.ResponseWriter, r *http.Request) {
 	// 验证请求参数
 	if req.Bucket == "" || req.Key == "" {
 		utils.WriteErrorResponse(w, "MissingRequiredParameter", "bucket and key are required", http.StatusBadRequest)
+		return
+	}
+
+	// 验证bucket和key的安全性
+	if strings.Contains(req.Bucket, "..") || strings.ContainsAny(req.Bucket, "/\\") {
+		utils.WriteErrorResponse(w, "InvalidBucketName", "Invalid bucket name", http.StatusBadRequest)
+		return
+	}
+	if strings.Contains(req.Key, "..") || strings.HasPrefix(req.Key, "/") {
+		utils.WriteErrorResponse(w, "InvalidKey", "Invalid object key", http.StatusBadRequest)
 		return
 	}
 
@@ -307,15 +325,30 @@ type BucketPublicRequest struct {
 
 // handleBucketAPI 处理桶管理API
 func (s *Server) handleBucketAPI(w http.ResponseWriter, r *http.Request) {
-	// 解析路径 /api/bucket/{bucket-name}/public
+	// 解析路径 /api/bucket/{bucket-name}/{action}
 	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(pathParts) < 4 || pathParts[2] == "" || pathParts[3] != "public" {
+	if len(pathParts) < 4 || pathParts[2] == "" {
 		utils.WriteErrorResponse(w, "InvalidPath", "Invalid API path", http.StatusNotFound)
 		return
 	}
 
 	bucketName := pathParts[2]
+	action := pathParts[3]
 
+	switch action {
+	case "public":
+		s.handleBucketPublicAPI(w, r, bucketName)
+	case "search":
+		s.handleBucketSearchAPI(w, r, bucketName)
+	case "head":
+		s.handleBucketHeadObjectAPI(w, r, bucketName)
+	default:
+		utils.WriteErrorResponse(w, "InvalidPath", "Invalid API action", http.StatusNotFound)
+	}
+}
+
+// handleBucketPublicAPI 处理桶公有/私有状态 API
+func (s *Server) handleBucketPublicAPI(w http.ResponseWriter, r *http.Request, bucketName string) {
 	if r.Method != http.MethodPut && r.Method != http.MethodGet {
 		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
@@ -363,6 +396,116 @@ func (s *Server) handleBucketAPI(w http.ResponseWriter, r *http.Request) {
 		}
 
 		utils.WriteJSONResponse(w, map[string]bool{"is_public": bucket.IsPublic})
+	}
+}
+
+// handleBucketSearchAPI 处理对象模糊搜索 API
+// GET /api/bucket/{bucket}/search?q={keyword}
+func (s *Server) handleBucketSearchAPI(w http.ResponseWriter, r *http.Request, bucketName string) {
+	if r.Method != http.MethodGet {
+		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		return
+	}
+
+	// 获取搜索关键字
+	keyword := r.URL.Query().Get("q")
+	if keyword == "" {
+		utils.WriteErrorResponse(w, "MissingParameter", "Missing 'q' parameter", http.StatusBadRequest)
+		return
+	}
+
+	// 检查桶是否存在
+	bucket, err := s.metadata.GetBucket(bucketName)
+	if err != nil {
+		utils.Error("check bucket failed", "error", err)
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		return
+	}
+	if bucket == nil {
+		utils.WriteError(w, utils.ErrNoSuchBucket, http.StatusNotFound, "")
+		return
+	}
+
+	// 执行搜索
+	objects, err := s.metadata.SearchObjects(bucketName, keyword, 100)
+	if err != nil {
+		utils.Error("search objects failed", "error", err)
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		return
+	}
+
+	// 返回搜索结果
+	type SearchResult struct {
+		Key          string `json:"Key"`
+		Size         int64  `json:"Size"`
+		LastModified string `json:"LastModified"`
+		ETag         string `json:"ETag"`
+	}
+	results := make([]SearchResult, 0, len(objects))
+	for _, obj := range objects {
+		results = append(results, SearchResult{
+			Key:          obj.Key,
+			Size:         obj.Size,
+			LastModified: obj.LastModified.Format(time.RFC3339),
+			ETag:         obj.ETag,
+		})
+	}
+
+	utils.WriteJSONResponse(w, map[string]interface{}{
+		"keyword": keyword,
+		"count":   len(results),
+		"objects": results,
+	})
+}
+
+// handleBucketHeadObjectAPI 检查对象是否存在
+// GET /api/bucket/{bucket}/head?key={key}
+func (s *Server) handleBucketHeadObjectAPI(w http.ResponseWriter, r *http.Request, bucketName string) {
+	if r.Method != http.MethodGet {
+		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		return
+	}
+
+	// 获取对象 key
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		utils.WriteErrorResponse(w, "MissingParameter", "Missing 'key' parameter", http.StatusBadRequest)
+		return
+	}
+
+	// 检查桶是否存在
+	bucket, err := s.metadata.GetBucket(bucketName)
+	if err != nil {
+		utils.Error("check bucket failed", "error", err)
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		return
+	}
+	if bucket == nil {
+		utils.WriteError(w, utils.ErrNoSuchBucket, http.StatusNotFound, "")
+		return
+	}
+
+	// 检查对象是否存在
+	obj, err := s.metadata.GetObject(bucketName, key)
+	if err != nil {
+		utils.Error("check object failed", "error", err)
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		return
+	}
+
+	if obj == nil {
+		utils.WriteJSONResponse(w, map[string]interface{}{
+			"exists": false,
+			"key":    key,
+		})
+	} else {
+		utils.WriteJSONResponse(w, map[string]interface{}{
+			"exists":       true,
+			"key":          key,
+			"size":         obj.Size,
+			"lastModified": obj.LastModified.Format(time.RFC3339),
+			"etag":         obj.ETag,
+		})
 	}
 }
 

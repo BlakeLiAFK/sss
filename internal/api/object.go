@@ -3,6 +3,7 @@ package api
 import (
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -50,20 +51,39 @@ func (s *Server) handleGetObject(w http.ResponseWriter, r *http.Request, bucket,
 	// 处理 Range 请求
 	var start, end int64 = 0, obj.Size - 1
 	rangeHeader := r.Header.Get("Range")
-	if rangeHeader != "" {
+	if rangeHeader != "" && obj.Size > 0 {
 		if strings.HasPrefix(rangeHeader, "bytes=") {
 			rangeSpec := strings.TrimPrefix(rangeHeader, "bytes=")
 			parts := strings.Split(rangeSpec, "-")
 			if len(parts) == 2 {
 				if parts[0] != "" {
-					start, _ = strconv.ParseInt(parts[0], 10, 64)
+					parsedStart, err := strconv.ParseInt(parts[0], 10, 64)
+					if err == nil && parsedStart >= 0 {
+						start = parsedStart
+					}
 				}
 				if parts[1] != "" {
-					end, _ = strconv.ParseInt(parts[1], 10, 64)
+					parsedEnd, err := strconv.ParseInt(parts[1], 10, 64)
+					if err == nil && parsedEnd >= 0 {
+						end = parsedEnd
+					}
 				} else if parts[0] != "" {
 					end = obj.Size - 1
 				}
 			}
+		}
+		// 验证范围有效性
+		if start < 0 {
+			start = 0
+		}
+		if end >= obj.Size {
+			end = obj.Size - 1
+		}
+		if start > end {
+			// 无效范围，返回416
+			w.Header().Set("Content-Range", "bytes */"+strconv.FormatInt(obj.Size, 10))
+			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+			return
 		}
 	}
 
@@ -77,11 +97,20 @@ func (s *Server) handleGetObject(w http.ResponseWriter, r *http.Request, bucket,
 	if rangeHeader != "" && start > 0 {
 		w.Header().Set("Content-Range", "bytes "+strconv.FormatInt(start, 10)+"-"+strconv.FormatInt(end, 10)+"/"+strconv.FormatInt(obj.Size, 10))
 		w.WriteHeader(http.StatusPartialContent)
-		file.Seek(start, 0)
-		io.CopyN(w, file, end-start+1)
+		if _, err := file.Seek(start, 0); err != nil {
+			utils.Error("seek file failed", "error", err)
+			return
+		}
+		if _, err := io.CopyN(w, file, end-start+1); err != nil {
+			// 客户端可能已断开连接，只记录日志
+			utils.Debug("copy to response failed", "error", err)
+		}
 	} else {
 		w.WriteHeader(http.StatusOK)
-		io.Copy(w, file)
+		if _, err := io.Copy(w, file); err != nil {
+			// 客户端可能已断开连接，只记录日志
+			utils.Debug("copy to response failed", "error", err)
+		}
 	}
 }
 
@@ -199,6 +228,115 @@ func (s *Server) handleDeleteObject(w http.ResponseWriter, r *http.Request, buck
 
 	// S3 删除不存在的对象也返回 204
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleCopyObject 复制对象
+func (s *Server) handleCopyObject(w http.ResponseWriter, r *http.Request, destBucket, destKey string) {
+	// 解析源对象路径
+	copySource := r.Header.Get("x-amz-copy-source")
+	if copySource == "" {
+		utils.WriteError(w, utils.ErrInvalidArgument, http.StatusBadRequest, "/"+destBucket+"/"+destKey)
+		return
+	}
+
+	// URL解码源路径（处理中文文件名等）
+	decodedSource, err := url.PathUnescape(copySource)
+	if err != nil {
+		utils.WriteErrorResponse(w, "InvalidCopySource", "Invalid x-amz-copy-source encoding", http.StatusBadRequest)
+		return
+	}
+
+	// 解析源路径，格式: /bucket/key 或 bucket/key
+	decodedSource = strings.TrimPrefix(decodedSource, "/")
+	parts := strings.SplitN(decodedSource, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		utils.WriteErrorResponse(w, "InvalidCopySource", "Invalid x-amz-copy-source format", http.StatusBadRequest)
+		return
+	}
+	srcBucket := parts[0]
+	srcKey := parts[1]
+
+	// 验证路径安全性（防止路径遍历）
+	if strings.Contains(srcBucket, "..") || strings.ContainsAny(srcBucket, "/\\") {
+		utils.WriteErrorResponse(w, "InvalidCopySource", "Invalid source bucket name", http.StatusBadRequest)
+		return
+	}
+	if strings.Contains(srcKey, "..") {
+		utils.WriteErrorResponse(w, "InvalidCopySource", "Invalid source key", http.StatusBadRequest)
+		return
+	}
+
+	// 检查源存储桶
+	srcB, err := s.metadata.GetBucket(srcBucket)
+	if err != nil {
+		utils.Error("check source bucket failed", "error", err)
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+srcBucket)
+		return
+	}
+	if srcB == nil {
+		utils.WriteError(w, utils.ErrNoSuchBucket, http.StatusNotFound, "/"+srcBucket)
+		return
+	}
+
+	// 检查目标存储桶
+	destB, err := s.metadata.GetBucket(destBucket)
+	if err != nil {
+		utils.Error("check dest bucket failed", "error", err)
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+destBucket)
+		return
+	}
+	if destB == nil {
+		utils.WriteError(w, utils.ErrNoSuchBucket, http.StatusNotFound, "/"+destBucket)
+		return
+	}
+
+	// 获取源对象元数据
+	srcObj, err := s.metadata.GetObject(srcBucket, srcKey)
+	if err != nil {
+		utils.Error("get source object metadata failed", "error", err)
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+srcBucket+"/"+srcKey)
+		return
+	}
+	if srcObj == nil {
+		utils.WriteError(w, utils.ErrNoSuchKey, http.StatusNotFound, "/"+srcBucket+"/"+srcKey)
+		return
+	}
+
+	// 复制文件
+	newStoragePath, etag, err := s.filestore.CopyObject(srcObj.StoragePath, destBucket, destKey)
+	if err != nil {
+		utils.Error("copy object file failed", "error", err)
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+destBucket+"/"+destKey)
+		return
+	}
+
+	// 保存新对象元数据
+	newObj := &storage.Object{
+		Key:          destKey,
+		Bucket:       destBucket,
+		Size:         srcObj.Size,
+		ETag:         etag,
+		ContentType:  srcObj.ContentType,
+		LastModified: time.Now().UTC(),
+		StoragePath:  newStoragePath,
+	}
+
+	if err := s.metadata.PutObject(newObj); err != nil {
+		utils.Error("save copied object metadata failed", "error", err)
+		s.filestore.DeleteObject(newStoragePath) // 回滚
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+destBucket+"/"+destKey)
+		return
+	}
+
+	// 返回 S3 CopyObject 响应格式
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(http.StatusOK)
+	response := `<?xml version="1.0" encoding="UTF-8"?>
+<CopyObjectResult>
+  <LastModified>` + newObj.LastModified.Format(time.RFC3339) + `</LastModified>
+  <ETag>"` + etag + `"</ETag>
+</CopyObjectResult>`
+	w.Write([]byte(response))
 }
 
 // handleHeadObject 获取对象元数据

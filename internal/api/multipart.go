@@ -174,9 +174,14 @@ func (s *Server) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// 限制请求体大小（防止大请求攻击）
+	r.Body = http.MaxBytesReader(w, r.Body, 10*1024*1024) // 最大10MB
+
 	// 解析请求体
 	var completeReq CompleteMultipartUploadRequest
-	if err := xml.NewDecoder(r.Body).Decode(&completeReq); err != nil {
+	decoder := xml.NewDecoder(r.Body)
+	decoder.CharsetReader = nil // 使用默认字符集处理
+	if err := decoder.Decode(&completeReq); err != nil {
 		utils.WriteError(w, utils.ErrInvalidArgument, http.StatusBadRequest, "/"+bucket+"/"+key)
 		return
 	}

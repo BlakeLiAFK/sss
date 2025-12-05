@@ -1,61 +1,85 @@
 package api
 
 import (
+	"fmt"
+	"io"
+	"io/fs"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 )
 
+// 静态文件系统（由 embed.go 或 embed_dev.go 初始化）
+var staticFS fs.FS
+var useEmbed bool
+
 // serveStatic 处理静态文件请求
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
-	// 静态文件目录
-	staticDir := "./data/static"
-
 	// 获取请求路径
 	path := r.URL.Path
 
 	// 如果是根路径，返回 index.html
 	if path == "/" {
-		s.serveFile(w, r, filepath.Join(staticDir, "index.html"))
+		s.serveStaticFile(w, r, "index.html")
 		return
 	}
 
 	// 处理 hash 路由
 	if strings.Contains(path, "#") {
-		s.serveFile(w, r, filepath.Join(staticDir, "index.html"))
+		s.serveStaticFile(w, r, "index.html")
 		return
 	}
 
-	// 处理静态资源
+	// 处理静态资源（去掉开头的斜杠）
 	if strings.HasPrefix(path, "/assets/") {
-		filePath := filepath.Join(staticDir, path)
-		s.serveFile(w, r, filePath)
+		s.serveStaticFile(w, r, path[1:]) // 去掉开头的 /
 		return
 	}
 
 	// 其他路径也返回 index.html (SPA 路由)
-	s.serveFile(w, r, filepath.Join(staticDir, "index.html"))
+	s.serveStaticFile(w, r, "index.html")
 }
 
-// serveFile 发送文件
-func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, filePath string) {
-	// 检查文件是否存在
-	_, err := os.Stat(filePath)
-	if os.IsNotExist(err) {
+// serveStaticFile 从文件系统或嵌入文件发送文件
+func (s *Server) serveStaticFile(w http.ResponseWriter, r *http.Request, name string) {
+	// 打开文件
+	f, err := staticFS.Open(name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+
+	// 获取文件信息
+	stat, err := f.Stat()
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
+	// 如果是目录，尝试 index.html
+	if stat.IsDir() {
+		indexPath := filepath.Join(name, "index.html")
+		f2, err := staticFS.Open(indexPath)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		defer f2.Close()
+		f = f2
+		stat, _ = f2.Stat()
+		name = indexPath
+	}
+
 	// 设置 Content-Type
-	ext := filepath.Ext(filePath)
+	ext := filepath.Ext(name)
 	switch ext {
 	case ".html":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	case ".css":
-		w.Header().Set("Content-Type", "text/css")
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	case ".js":
-		w.Header().Set("Content-Type", "application/javascript")
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	case ".png":
 		w.Header().Set("Content-Type", "image/png")
 	case ".jpg", ".jpeg":
@@ -64,8 +88,33 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, filePath stri
 		w.Header().Set("Content-Type", "image/gif")
 	case ".svg":
 		w.Header().Set("Content-Type", "image/svg+xml")
+	case ".ico":
+		w.Header().Set("Content-Type", "image/x-icon")
+	case ".json":
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	case ".woff":
+		w.Header().Set("Content-Type", "font/woff")
+	case ".woff2":
+		w.Header().Set("Content-Type", "font/woff2")
+	case ".ttf":
+		w.Header().Set("Content-Type", "font/ttf")
 	}
 
-	// 发送文件
-	http.ServeFile(w, r, filePath)
+	// 如果支持 ReadSeeker，使用 http.ServeContent（支持 Range 请求）
+	if rs, ok := f.(io.ReadSeeker); ok {
+		http.ServeContent(w, r, name, stat.ModTime(), rs)
+		return
+	}
+
+	// 否则直接复制内容
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", stat.Size()))
+	if _, err := io.Copy(w, f); err != nil {
+		// 客户端可能已断开连接，忽略错误
+		return
+	}
+}
+
+// IsEmbedMode 返回是否使用嵌入模式
+func IsEmbedMode() bool {
+	return useEmbed
 }

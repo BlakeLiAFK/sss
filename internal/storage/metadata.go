@@ -16,13 +16,27 @@ type MetadataStore struct {
 
 // NewMetadataStore 创建元数据存储
 func NewMetadataStore(dbPath string) (*MetadataStore, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	// 使用 WAL 模式提升并发性能，设置 busy_timeout 避免锁等待
+	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL&_cache_size=2000")
 	if err != nil {
 		return nil, err
 	}
 
+	// 设置连接池参数
+	db.SetMaxOpenConns(25)        // 最大打开连接数
+	db.SetMaxIdleConns(5)         // 最大空闲连接数
+	db.SetConnMaxLifetime(0)      // 连接不过期
+	db.SetConnMaxIdleTime(0)      // 空闲连接不过期
+
+	// 验证连接
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
 	store := &MetadataStore{db: db}
 	if err := store.initTables(); err != nil {
+		db.Close()
 		return nil, err
 	}
 
@@ -316,4 +330,46 @@ func (m *MetadataStore) ListParts(uploadID string) ([]Part, error) {
 func (m *MetadataStore) DeleteParts(uploadID string) error {
 	_, err := m.db.Exec("DELETE FROM parts WHERE upload_id = ?", uploadID)
 	return err
+}
+
+// escapeLikePattern 转义LIKE模式中的特殊字符
+func escapeLikePattern(pattern string) string {
+	// 转义 %、_ 和 \ 这些LIKE中的特殊字符
+	result := strings.ReplaceAll(pattern, "\\", "\\\\")
+	result = strings.ReplaceAll(result, "%", "\\%")
+	result = strings.ReplaceAll(result, "_", "\\_")
+	return result
+}
+
+// SearchObjects 模糊搜索对象（按文件名关键字）
+func (m *MetadataStore) SearchObjects(bucket, keyword string, maxResults int) ([]Object, error) {
+	if maxResults <= 0 {
+		maxResults = 100
+	}
+	if maxResults > 1000 {
+		maxResults = 1000 // 限制最大结果数
+	}
+
+	// 转义关键字中的特殊字符，防止SQL注入
+	escapedKeyword := escapeLikePattern(keyword)
+
+	query := "SELECT bucket, key, size, etag, content_type, last_modified, storage_path FROM objects WHERE bucket = ? AND key LIKE ? ESCAPE '\\' ORDER BY key LIMIT ?"
+	// 使用 %keyword% 实现模糊匹配
+	args := []interface{}{bucket, "%" + escapedKeyword + "%", maxResults}
+
+	rows, err := m.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var objects []Object
+	for rows.Next() {
+		var obj Object
+		if err := rows.Scan(&obj.Bucket, &obj.Key, &obj.Size, &obj.ETag, &obj.ContentType, &obj.LastModified, &obj.StoragePath); err != nil {
+			return nil, err
+		}
+		objects = append(objects, obj)
+	}
+	return objects, nil
 }
