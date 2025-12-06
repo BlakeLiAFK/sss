@@ -276,3 +276,70 @@ export async function getBucketPublic(bucketName: string): Promise<boolean> {
   const resp = await axios.get(`${auth.endpoint}/api/bucket/${bucketName}/public`)
   return resp.data.is_public
 }
+
+// 搜索对象（模糊匹配）
+export async function searchObjects(bucket: string, keyword: string): Promise<{ objects: S3Object[], count: number }> {
+  const auth = useAuthStore()
+  const resp = await axios.get(`${auth.endpoint}/api/bucket/${bucket}/search`, {
+    params: { q: keyword }
+  })
+  return {
+    objects: resp.data.objects || [],
+    count: resp.data.count || 0
+  }
+}
+
+// 检查对象是否存在
+export async function checkObjectExists(bucket: string, key: string): Promise<{ exists: boolean, size?: number, lastModified?: string }> {
+  const auth = useAuthStore()
+  const resp = await axios.get(`${auth.endpoint}/api/bucket/${bucket}/head`, {
+    params: { key }
+  })
+  return resp.data
+}
+
+// 复制对象（用于重命名/移动）
+export async function copyObject(srcBucket: string, srcKey: string, destBucket: string, destKey: string): Promise<void> {
+  const auth = useAuthStore()
+  const now = new Date()
+  const dateStr = now.toISOString().replace(/[:-]|\.\d{3}/g, '').slice(0, 8)
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '')
+
+  // 构建复制源路径
+  const copySource = `/${srcBucket}/${srcKey}`
+
+  const url = new URL(`/${destBucket}/${destKey}`, auth.endpoint)
+  const host = url.host
+
+  // 空 payload 的 hash
+  const payloadHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+
+  // 签名头部（按字母顺序排列）
+  const signedHeaders = 'host;x-amz-content-sha256;x-amz-copy-source;x-amz-date'
+
+  // 规范头部
+  const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-copy-source:${copySource}\nx-amz-date:${amzDate}\n`
+
+  // 规范请求
+  const canonicalRequest = ['PUT', url.pathname, '', canonicalHeaders, signedHeaders, payloadHash].join('\n')
+
+  // 待签名字符串
+  const scope = `${dateStr}/${auth.region}/s3/aws4_request`
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, await sha256(canonicalRequest)].join('\n')
+
+  // 计算签名
+  const kDate = await hmacSHA256(new TextEncoder().encode('AWS4' + auth.secretAccessKey), dateStr)
+  const kRegion = await hmacSHA256(kDate, auth.region)
+  const kService = await hmacSHA256(kRegion, 's3')
+  const kSigning = await hmacSHA256(kService, 'aws4_request')
+  const signature = await hmacSHA256Hex(kSigning, stringToSign)
+
+  const headers: Record<string, string> = {
+    'x-amz-date': amzDate,
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-copy-source': copySource,
+    'Authorization': `AWS4-HMAC-SHA256 Credential=${auth.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
+  }
+
+  await axios.put(url.toString(), null, { headers })
+}

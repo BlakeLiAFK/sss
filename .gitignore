@@ -7,9 +7,20 @@
 *.test
 *.out
 sss
+sss-*
 
 # Data
 data/
+
+# Build artifacts
+internal/api/static/
+
+# Test files
+debug_*.js
+test_*.js
+test_*.html
+*.txt
+plan_*.md
 
 # IDE
 .idea/

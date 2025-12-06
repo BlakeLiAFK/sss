@@ -1,0 +1,171 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: false
+        default: 'dev'
+
+env:
+  GO_VERSION: '1.21'
+  NODE_VERSION: '20'
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # Linux
+          - os: linux
+            arch: amd64
+            ext: ''
+          - os: linux
+            arch: arm64
+            ext: ''
+          # macOS
+          - os: darwin
+            arch: amd64
+            ext: ''
+          - os: darwin
+            arch: arm64
+            ext: ''
+          # Windows
+          - os: windows
+            arch: amd64
+            ext: '.exe'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build Frontend
+        run: |
+          cd web
+          npm ci
+          npm run build:fast
+          cd ..
+          rm -rf internal/api/static
+          mkdir -p internal/api/static
+          cp -r data/static/* internal/api/static/
+
+      - name: Build Binary
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+        run: |
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          OUTPUT_NAME="sss-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
+          go build -tags embed -ldflags="-s -w -X main.Version=${VERSION}" -o ${OUTPUT_NAME} ./cmd/server
+          echo "Built ${OUTPUT_NAME}"
+
+      - name: Compress Binary (Unix)
+        if: matrix.os != 'windows'
+        run: |
+          OUTPUT_NAME="sss-${{ matrix.os }}-${{ matrix.arch }}"
+          tar -czvf ${OUTPUT_NAME}.tar.gz ${OUTPUT_NAME}
+          rm ${OUTPUT_NAME}
+
+      - name: Compress Binary (Windows)
+        if: matrix.os == 'windows'
+        run: |
+          OUTPUT_NAME="sss-${{ matrix.os }}-${{ matrix.arch }}.exe"
+          zip sss-${{ matrix.os }}-${{ matrix.arch }}.zip ${OUTPUT_NAME}
+          rm ${OUTPUT_NAME}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sss-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            sss-*.tar.gz
+            sss-*.zip
+          retention-days: 7
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List Artifacts
+        run: ls -la artifacts/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # CI build on push to master (without release)
+  ci-build:
+    name: CI Build Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build Frontend
+        run: |
+          cd web
+          npm ci
+          npm run build:fast
+
+      - name: Run Tests
+        run: go test -v ./...
+
+      - name: Build Check (Linux amd64)
+        env:
+          CGO_ENABLED: 0
+        run: |
+          rm -rf internal/api/static
+          mkdir -p internal/api/static
+          cp -r data/static/* internal/api/static/
+          go build -tags embed -o sss ./cmd/server
+          echo "Build successful!"
