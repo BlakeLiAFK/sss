@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"sss/internal/api"
+	"sss/internal/auth"
 	"sss/internal/config"
 	"sss/internal/storage"
 	"sss/internal/utils"
@@ -49,13 +50,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 初始化 API Key 缓存
+	auth.InitAPIKeyCache(metadata)
+	utils.Info("API Key 缓存已初始化")
+
 	// 创建服务器
 	server := api.NewServer(metadata, filestore)
 
 	// 启动 HTTP 服务
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	utils.Info("服务器启动", "address", addr, "region", cfg.Server.Region)
-	utils.Info("Access Key", "id", cfg.Auth.AccessKeyID)
+	utils.Info("管理员账号", "username", cfg.Auth.AdminUsername)
+	if cfg.Auth.AccessKeyID != "" {
+		utils.Info("旧版 Access Key（兼容）", "id", cfg.Auth.AccessKeyID)
+	}
 
 	if err := http.ListenAndServe(addr, server); err != nil {
 		utils.Error("服务器启动失败", "error", err)

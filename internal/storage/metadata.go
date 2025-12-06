@@ -81,6 +81,24 @@ func (m *MetadataStore) initTables() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_objects_bucket ON objects(bucket)`,
 		`CREATE INDEX IF NOT EXISTS idx_objects_prefix ON objects(bucket, key)`,
+		// API Keys 表
+		`CREATE TABLE IF NOT EXISTS api_keys (
+			access_key_id TEXT PRIMARY KEY,
+			secret_access_key TEXT NOT NULL,
+			description TEXT,
+			created_at DATETIME NOT NULL,
+			enabled INTEGER DEFAULT 1
+		)`,
+		// API Key 桶权限表
+		`CREATE TABLE IF NOT EXISTS api_key_permissions (
+			access_key_id TEXT NOT NULL,
+			bucket_name TEXT NOT NULL,
+			can_read INTEGER DEFAULT 0,
+			can_write INTEGER DEFAULT 0,
+			PRIMARY KEY (access_key_id, bucket_name),
+			FOREIGN KEY (access_key_id) REFERENCES api_keys(access_key_id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_key_permissions ON api_key_permissions(access_key_id)`,
 	}
 
 	for _, schema := range schemas {

@@ -28,6 +28,11 @@ type StorageConfig struct {
 }
 
 type AuthConfig struct {
+	// 管理员账号 (Web UI 登录)
+	AdminUsername string `yaml:"admin_username"`
+	AdminPassword string `yaml:"admin_password"`
+
+	// 兼容旧配置：如果没有配置管理员账号，使用这个作为默认 API Key
 	AccessKeyID     string `yaml:"access_key_id"`
 	SecretAccessKey string `yaml:"secret_access_key"`
 }
@@ -74,6 +79,14 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = "info"
+	}
+
+	// 管理员账号默认值
+	if cfg.Auth.AdminUsername == "" {
+		cfg.Auth.AdminUsername = "admin"
+	}
+	if cfg.Auth.AdminPassword == "" {
+		cfg.Auth.AdminPassword = "admin"
 	}
 
 	Global = cfg

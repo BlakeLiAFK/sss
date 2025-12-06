@@ -2,30 +2,46 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
 export const useAuthStore = defineStore('auth', () => {
-  const accessKeyId = ref(localStorage.getItem('accessKeyId') || 'admin')
-  const secretAccessKey = ref(localStorage.getItem('secretAccessKey') || 'admin')
-  const endpoint = ref(localStorage.getItem('endpoint') || 'http://localhost:8080')
+  // 管理员 session token
+  const adminToken = ref(localStorage.getItem('adminToken') || '')
+
+  // S3 API 配置（用于预签名 URL 等）
+  const endpoint = ref(localStorage.getItem('endpoint') || window.location.origin)
   const region = ref(localStorage.getItem('region') || 'us-east-1')
 
-  const isLoggedIn = computed(() => accessKeyId.value !== '' && secretAccessKey.value !== '')
+  const isLoggedIn = computed(() => adminToken.value !== '')
 
-  function login(akId: string, sakKey: string, ep: string, reg: string) {
-    accessKeyId.value = akId
-    secretAccessKey.value = sakKey
+  // 管理员登录
+  function login(token: string, ep: string, reg: string) {
+    adminToken.value = token
     endpoint.value = ep
     region.value = reg
-    localStorage.setItem('accessKeyId', akId)
-    localStorage.setItem('secretAccessKey', sakKey)
+    localStorage.setItem('adminToken', token)
     localStorage.setItem('endpoint', ep)
     localStorage.setItem('region', reg)
   }
 
+  // 管理员登出
   function logout() {
-    accessKeyId.value = ''
-    secretAccessKey.value = ''
-    localStorage.removeItem('accessKeyId')
-    localStorage.removeItem('secretAccessKey')
+    adminToken.value = ''
+    localStorage.removeItem('adminToken')
   }
 
-  return { accessKeyId, secretAccessKey, endpoint, region, isLoggedIn, login, logout }
+  // 获取管理员请求头
+  function getAdminHeaders() {
+    return {
+      'X-Admin-Token': adminToken.value,
+      'Content-Type': 'application/json'
+    }
+  }
+
+  return {
+    adminToken,
+    endpoint,
+    region,
+    isLoggedIn,
+    login,
+    logout,
+    getAdminHeaders
+  }
 })
