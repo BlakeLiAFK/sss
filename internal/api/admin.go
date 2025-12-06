@@ -565,9 +565,10 @@ func (s *Server) handleAPIKeyDetail(w http.ResponseWriter, r *http.Request, path
 			utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		}
 	} else {
-		// /api/admin/apikeys/{id}/permissions
+		// /api/admin/apikeys/{id}/permissions 或 /reset-secret
 		action := parts[1]
-		if action == "permissions" {
+		switch action {
+		case "permissions":
 			switch r.Method {
 			case http.MethodPost:
 				s.setAPIKeyPermission(w, r, accessKeyID)
@@ -576,7 +577,13 @@ func (s *Server) handleAPIKeyDetail(w http.ResponseWriter, r *http.Request, path
 			default:
 				utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 			}
-		} else {
+		case "reset-secret":
+			if r.Method == http.MethodPost {
+				s.resetAPIKeySecret(w, r, accessKeyID)
+			} else {
+				utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+			}
+		default:
 			utils.WriteErrorResponse(w, "NotFound", "API endpoint not found", http.StatusNotFound)
 		}
 	}
@@ -724,4 +731,37 @@ func (s *Server) deleteAPIKeyPermission(w http.ResponseWriter, r *http.Request, 
 	auth.ReloadAPIKeyCache()
 
 	s.getAPIKey(w, r, accessKeyID)
+}
+
+// resetAPIKeySecret 重置 API Key 的 Secret Key
+func (s *Server) resetAPIKeySecret(w http.ResponseWriter, r *http.Request, accessKeyID string) {
+	newSecret, err := s.metadata.ResetAPIKeySecret(accessKeyID)
+	if err != nil {
+		utils.Error("reset api key secret failed", "error", err)
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		return
+	}
+
+	// 刷新缓存
+	auth.ReloadAPIKeyCache()
+
+	// 获取 API Key 详情
+	key, err := s.metadata.GetAPIKey(accessKeyID)
+	if err != nil {
+		utils.Error("get api key failed", "error", err)
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		return
+	}
+
+	perms, _ := s.metadata.GetAPIKeyPermissions(accessKeyID)
+
+	// 返回包含新 Secret Key 的响应（仅此次返回）
+	utils.WriteJSONResponse(w, APIKeyResponse{
+		AccessKeyID:     key.AccessKeyID,
+		SecretAccessKey: newSecret,
+		Description:     key.Description,
+		CreatedAt:       key.CreatedAt.Format(time.RFC3339),
+		Enabled:         key.Enabled,
+		Permissions:     perms,
+	})
 }

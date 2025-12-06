@@ -67,6 +67,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
+// isRootStaticFile 检查是否是根目录静态文件（仅限根目录下的文件，不包括子路径）
+// 修复安全漏洞：之前只检查后缀，导致 /bucket/file.txt 被误判为静态文件并绕过认证
+func isRootStaticFile(path string) bool {
+	// 确保是根目录文件（只有一个 /，即文件在根目录下）
+	// 例如：/robots.txt 匹配，但 /ccdd/test.txt 不匹配
+	if !strings.HasPrefix(path, "/") || strings.Count(path, "/") > 1 {
+		return false
+	}
+	return strings.HasSuffix(path, ".svg") ||
+		strings.HasSuffix(path, ".ico") ||
+		strings.HasSuffix(path, ".png") ||
+		strings.HasSuffix(path, ".txt") ||
+		strings.HasSuffix(path, ".webmanifest")
+}
+
 // handleRequest 处理请求
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// 1. 检查是否是静态文件请求
@@ -87,6 +102,10 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		// 否则继续处理 S3 API
 	} else if strings.HasPrefix(r.URL.Path, "/assets/") {
+		s.serveStatic(w, r)
+		return
+	} else if isRootStaticFile(r.URL.Path) {
+		// 处理根目录静态文件（favicon.svg, robots.txt 等）
 		s.serveStatic(w, r)
 		return
 	}

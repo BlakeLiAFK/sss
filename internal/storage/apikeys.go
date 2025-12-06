@@ -249,6 +249,20 @@ func (m *MetadataStore) UpdateAPIKeyDescription(accessKeyID, description string)
 	return err
 }
 
+// ResetAPIKeySecret 重置API密钥的SecretKey
+func (m *MetadataStore) ResetAPIKeySecret(accessKeyID string) (string, error) {
+	newSecret := generateRandomKey(40)
+	result, err := m.db.Exec("UPDATE api_keys SET secret_access_key = ? WHERE access_key_id = ?", newSecret, accessKeyID)
+	if err != nil {
+		return "", err
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return "", sql.ErrNoRows
+	}
+	return newSecret, nil
+}
+
 // === API Key Permission 操作 ===
 
 // SetAPIKeyPermission 设置API密钥的桶权限

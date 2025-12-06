@@ -8,7 +8,7 @@ import (
 	"io/fs"
 )
 
-//go:embed static/*
+//go:embed all:static
 var embeddedStatic embed.FS
 
 func init() {

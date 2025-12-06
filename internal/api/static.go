@@ -36,6 +36,13 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 处理根目录静态文件（favicon.svg, robots.txt 等）
+	if strings.HasSuffix(path, ".svg") || strings.HasSuffix(path, ".ico") ||
+		strings.HasSuffix(path, ".png") || strings.HasSuffix(path, ".txt") {
+		s.serveStaticFile(w, r, path[1:]) // 去掉开头的 /
+		return
+	}
+
 	// 其他路径也返回 index.html (SPA 路由)
 	s.serveStaticFile(w, r, "index.html")
 }

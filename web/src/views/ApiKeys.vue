@@ -72,11 +72,15 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="Actions" width="180" align="center" fixed="right">
+        <el-table-column label="Actions" width="260" align="center" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="showPermDialog(row)">
               <el-icon><Setting /></el-icon>
               Permissions
+            </el-button>
+            <el-button size="small" type="warning" text @click="resetSecret(row)">
+              <el-icon><Refresh /></el-icon>
+              Reset
             </el-button>
             <el-button size="small" type="danger" text @click="deleteKey(row)">
               <el-icon><Delete /></el-icon>
@@ -120,7 +124,7 @@
     <!-- Show Secret Key Dialog -->
     <el-dialog
       v-model="secretDialogVisible"
-      title="API Key Created"
+      :title="secretDialogTitle"
       width="550px"
       :close-on-click-modal="false"
       :show-close="false"
@@ -250,7 +254,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, CopyDocument, Setting, Delete, CircleCheck, CircleClose } from '@element-plus/icons-vue'
+import { Plus, CopyDocument, Setting, Delete, CircleCheck, CircleClose, Refresh } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import axios from 'axios'
 
@@ -289,6 +293,7 @@ const permDialogVisible = ref(false)
 
 const createForm = reactive({ description: '' })
 const newKey = reactive({ access_key_id: '', secret_access_key: '' })
+const secretDialogTitle = ref('API Key Created') // 对话框标题：创建或重置
 const selectedKey = ref<APIKey | null>(null)
 const permForm = reactive({
   bucket_name: '',
@@ -338,6 +343,7 @@ async function createKey() {
     })
     newKey.access_key_id = response.data.access_key_id
     newKey.secret_access_key = response.data.secret_access_key
+    secretDialogTitle.value = 'API Key Created'
     createDialogVisible.value = false
     secretDialogVisible.value = true
     await loadApiKeys()
@@ -346,6 +352,35 @@ async function createKey() {
     ElMessage.error('Failed to create API key: ' + e.message)
   } finally {
     creating.value = false
+  }
+}
+
+async function resetSecret(key: APIKey) {
+  try {
+    await ElMessageBox.confirm(
+      `Are you sure you want to reset the Secret Key for this API Key? The old secret will be invalidated immediately.`,
+      'Reset Secret Key',
+      {
+        type: 'warning',
+        confirmButtonText: 'Reset',
+        confirmButtonClass: 'el-button--warning'
+      }
+    )
+    const response = await axios.post(
+      `${auth.endpoint}/api/admin/apikeys/${key.access_key_id}/reset-secret`,
+      {},
+      { headers: getHeaders() }
+    )
+    newKey.access_key_id = response.data.access_key_id
+    newKey.secret_access_key = response.data.secret_access_key
+    secretDialogTitle.value = 'Secret Key Reset'
+    secretDialogVisible.value = true
+    await loadApiKeys()
+    ElMessage.success('Secret Key has been reset')
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error('Failed to reset secret key: ' + e.message)
+    }
   }
 }
 
