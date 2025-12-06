@@ -8,22 +8,22 @@
         </div>
       </template>
 
-      <el-form :model="form" :rules="rules" ref="formRef" label-width="120px">
+      <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="Endpoint" prop="endpoint">
           <el-input v-model="form.endpoint" placeholder="http://localhost:8080" />
         </el-form-item>
         <el-form-item label="Region" prop="region">
           <el-input v-model="form.region" placeholder="us-east-1" />
         </el-form-item>
-        <el-form-item label="Access Key ID" prop="accessKeyId">
-          <el-input v-model="form.accessKeyId" placeholder="admin" />
+        <el-form-item label="Username" prop="username">
+          <el-input v-model="form.username" placeholder="admin" />
         </el-form-item>
-        <el-form-item label="Secret Key" prop="secretAccessKey">
-          <el-input v-model="form.secretAccessKey" type="password" placeholder="admin" show-password />
+        <el-form-item label="Password" prop="password">
+          <el-input v-model="form.password" type="password" placeholder="admin" show-password />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleLogin" :loading="loading" style="width: 100%">
-            登录
+            Login
           </el-button>
         </el-form-item>
       </el-form>
@@ -36,7 +36,7 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
-import { listBuckets } from '../api/s3'
+import axios from 'axios'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -44,16 +44,16 @@ const formRef = ref<FormInstance>()
 const loading = ref(false)
 
 const form = reactive({
-  endpoint: auth.endpoint || 'http://localhost:8080',
+  endpoint: auth.endpoint || window.location.origin,
   region: auth.region || 'us-east-1',
-  accessKeyId: auth.accessKeyId || 'admin',
-  secretAccessKey: auth.secretAccessKey || 'admin'
+  username: 'admin',
+  password: ''
 })
 
 const rules = {
-  endpoint: [{ required: true, message: '请输入Endpoint', trigger: 'blur' }],
-  accessKeyId: [{ required: true, message: '请输入Access Key ID', trigger: 'blur' }],
-  secretAccessKey: [{ required: true, message: '请输入Secret Access Key', trigger: 'blur' }]
+  endpoint: [{ required: true, message: 'Please input Endpoint', trigger: 'blur' }],
+  username: [{ required: true, message: 'Please input Username', trigger: 'blur' }],
+  password: [{ required: true, message: 'Please input Password', trigger: 'blur' }]
 }
 
 async function handleLogin() {
@@ -63,13 +63,20 @@ async function handleLogin() {
 
     loading.value = true
     try {
-      auth.login(form.accessKeyId, form.secretAccessKey, form.endpoint, form.region)
-      await listBuckets() // 测试连接
-      ElMessage.success('登录成功')
-      router.push('/')
+      const response = await axios.post(`${form.endpoint}/api/admin/login`, {
+        username: form.username,
+        password: form.password
+      })
+
+      if (response.data.success) {
+        auth.login(response.data.token, form.endpoint, form.region)
+        ElMessage.success('Login successful')
+        router.push('/')
+      } else {
+        ElMessage.error(response.data.message || 'Login failed')
+      }
     } catch (e: any) {
-      auth.logout()
-      ElMessage.error('登录失败: ' + (e.response?.data || e.message))
+      ElMessage.error('Login failed: ' + (e.response?.data?.message || e.message))
     } finally {
       loading.value = false
     }
@@ -87,7 +94,7 @@ async function handleLogin() {
 }
 
 .login-card {
-  width: 450px;
+  width: 420px;
 }
 
 .card-header {

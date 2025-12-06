@@ -10,8 +10,14 @@ storage:
   max_upload_size: 1073741824   # 1GB (1 * 1024 * 1024 * 1024)
 
 auth:
-  access_key_id: "admin"
-  secret_access_key: "admin"
+  # Admin account for Web UI login
+  admin_username: "admin"
+  admin_password: "admin"
+
+  # Legacy API Key (optional, for backward compatibility)
+  # If set, this key has full access to all buckets
+  # access_key_id: "admin"
+  # secret_access_key: "admin"
 
 log:
   level: "info"

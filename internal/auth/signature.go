@@ -14,8 +14,40 @@ import (
 	"time"
 
 	"sss/internal/config"
+	"sss/internal/storage"
 	"sss/internal/utils"
 )
+
+// 全局 API Key 缓存
+var apiKeyCache *storage.APIKeyCache
+
+// InitAPIKeyCache 初始化 API Key 缓存
+func InitAPIKeyCache(store *storage.MetadataStore) {
+	apiKeyCache = storage.NewAPIKeyCache(store)
+}
+
+// ReloadAPIKeyCache 重新加载 API Key 缓存
+func ReloadAPIKeyCache() error {
+	if apiKeyCache != nil {
+		return apiKeyCache.Reload()
+	}
+	return nil
+}
+
+// CheckBucketPermission 检查 API Key 对桶的访问权限
+func CheckBucketPermission(accessKeyID, bucket string, needWrite bool) bool {
+	// 如果使用旧配置的管理员 Key，拥有全部权限
+	if config.Global.Auth.AccessKeyID != "" &&
+		accessKeyID == config.Global.Auth.AccessKeyID {
+		return true
+	}
+
+	// 从缓存检查权限
+	if apiKeyCache != nil {
+		return apiKeyCache.CheckPermission(accessKeyID, bucket, needWrite)
+	}
+	return false
+}
 
 const (
 	algorithm       = "AWS4-HMAC-SHA256"
@@ -27,8 +59,14 @@ const (
 // 解析 Authorization 头
 var authHeaderRegex = regexp.MustCompile(`AWS4-HMAC-SHA256\s+Credential=([^/]+)/(\d{8})/([^/]+)/s3/aws4_request,\s*SignedHeaders=([^,]+),\s*Signature=([a-f0-9]+)`)
 
-// VerifyRequest 验证请求签名
+// VerifyRequest 验证请求签名，返回是否验证成功
 func VerifyRequest(r *http.Request) bool {
+	_, ok := VerifyRequestAndGetAccessKey(r)
+	return ok
+}
+
+// VerifyRequestAndGetAccessKey 验证请求签名并返回 Access Key ID
+func VerifyRequestAndGetAccessKey(r *http.Request) (string, bool) {
 	// 检查是否是预签名 URL
 	if r.URL.Query().Get("X-Amz-Signature") != "" {
 		return verifyPresignedURL(r)
@@ -36,13 +74,13 @@ func VerifyRequest(r *http.Request) bool {
 
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
-		return false
+		return "", false
 	}
 
 	matches := authHeaderRegex.FindStringSubmatch(authHeader)
 	if matches == nil {
 		utils.Debug("invalid auth header format", "header", authHeader)
-		return false
+		return "", false
 	}
 
 	accessKey := matches[1]
@@ -51,24 +89,47 @@ func VerifyRequest(r *http.Request) bool {
 	signedHeaders := matches[4]
 	signature := matches[5]
 
-	// 验证 Access Key
-	if accessKey != config.Global.Auth.AccessKeyID {
-		utils.Debug("invalid access key", "got", accessKey, "want", config.Global.Auth.AccessKeyID)
-		return false
+	// 获取对应的 Secret Key
+	secretKey := getSecretKey(accessKey)
+	if secretKey == "" {
+		utils.Debug("invalid access key", "got", accessKey)
+		return "", false
 	}
 
 	// 计算签名
-	calculatedSig := calculateSignature(r, dateStr, region, signedHeaders)
+	calculatedSig := calculateSignatureWithSecret(r, dateStr, region, signedHeaders, secretKey)
 	if calculatedSig != signature {
 		utils.Debug("signature mismatch", "calculated", calculatedSig, "provided", signature)
-		return false
+		return "", false
 	}
 
-	return true
+	return accessKey, true
 }
 
-// calculateSignature 计算请求签名
+// getSecretKey 获取 Access Key 对应的 Secret Key
+func getSecretKey(accessKeyID string) string {
+	// 先检查旧配置中的管理员 Key
+	if config.Global.Auth.AccessKeyID != "" &&
+		accessKeyID == config.Global.Auth.AccessKeyID {
+		return config.Global.Auth.SecretAccessKey
+	}
+
+	// 从缓存中获取
+	if apiKeyCache != nil {
+		if secret, ok := apiKeyCache.GetSecretKey(accessKeyID); ok {
+			return secret
+		}
+	}
+	return ""
+}
+
+// calculateSignature 计算请求签名（使用配置中的密钥，兼容旧代码）
 func calculateSignature(r *http.Request, dateStr, region, signedHeaders string) string {
+	return calculateSignatureWithSecret(r, dateStr, region, signedHeaders, config.Global.Auth.SecretAccessKey)
+}
+
+// calculateSignatureWithSecret 使用指定密钥计算请求签名
+func calculateSignatureWithSecret(r *http.Request, dateStr, region, signedHeaders, secretKey string) string {
 	// 获取请求时间
 	amzDate := r.Header.Get("X-Amz-Date")
 	if amzDate == "" {
@@ -85,7 +146,7 @@ func calculateSignature(r *http.Request, dateStr, region, signedHeaders string) 
 	utils.Debug("string to sign", "string", stringToSign)
 
 	// 3. 计算签名
-	signingKey := deriveSigningKey(config.Global.Auth.SecretAccessKey, dateStr, region)
+	signingKey := deriveSigningKey(secretKey, dateStr, region)
 	signature := hex.EncodeToString(hmacSHA256(signingKey, []byte(stringToSign)))
 
 	return signature
@@ -199,41 +260,49 @@ func getCanonicalQueryString(query url.Values) string {
 	return strings.Join(pairs, "&")
 }
 
-// verifyPresignedURL 验证预签名 URL
-func verifyPresignedURL(r *http.Request) bool {
+// verifyPresignedURL 验证预签名 URL，返回 access key ID
+func verifyPresignedURL(r *http.Request) (string, bool) {
 	query := r.URL.Query()
 
 	// 解析参数
-	accessKey := query.Get("X-Amz-Credential")
-	if accessKey == "" {
-		return false
+	credential := query.Get("X-Amz-Credential")
+	if credential == "" {
+		return "", false
 	}
 	// Credential 格式: accessKey/date/region/s3/aws4_request
-	parts := strings.Split(accessKey, "/")
-	if len(parts) != 5 || parts[0] != config.Global.Auth.AccessKeyID {
-		return false
+	parts := strings.Split(credential, "/")
+	if len(parts) != 5 {
+		return "", false
 	}
 
+	accessKeyID := parts[0]
 	dateStr := parts[1]
 	region := parts[2]
+
+	// 获取对应的 Secret Key
+	secretKey := getSecretKey(accessKeyID)
+	if secretKey == "" {
+		utils.Debug("invalid access key in presigned URL", "got", accessKeyID)
+		return "", false
+	}
 
 	// 检查过期时间
 	amzDate := query.Get("X-Amz-Date")
 	expires := query.Get("X-Amz-Expires")
 	if amzDate == "" || expires == "" {
-		return false
+		return "", false
 	}
 
 	t, err := time.Parse("20060102T150405Z", amzDate)
 	if err != nil {
-		return false
+		return "", false
 	}
 
 	var expireSec int
 	fmt.Sscanf(expires, "%d", &expireSec)
 	if time.Now().After(t.Add(time.Duration(expireSec) * time.Second)) {
 		utils.Debug("presigned URL expired")
-		return false
+		return "", false
 	}
 
 	// 验证签名
@@ -285,10 +354,13 @@ func verifyPresignedURL(r *http.Request) bool {
 
 	scope := fmt.Sprintf("%s/%s/%s/%s", dateStr, region, serviceName, terminationStr)
 	stringToSign := createStringToSign(amzDate, scope, canonicalRequest)
-	signingKey := deriveSigningKey(config.Global.Auth.SecretAccessKey, dateStr, region)
+	signingKey := deriveSigningKey(secretKey, dateStr, region)
 	calculatedSig := hex.EncodeToString(hmacSHA256(signingKey, []byte(stringToSign)))
 
-	return calculatedSig == providedSig
+	if calculatedSig == providedSig {
+		return accessKeyID, true
+	}
+	return "", false
 }
 
 // GetPayloadHash 计算请求体哈希

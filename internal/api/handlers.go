@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -8,6 +9,14 @@ import (
 	"sss/internal/auth"
 	"sss/internal/storage"
 	"sss/internal/utils"
+)
+
+// 上下文键类型
+type contextKey string
+
+const (
+	// ContextKeyAccessKeyID 存储验证通过的 Access Key ID
+	ContextKeyAccessKeyID contextKey = "accessKeyID"
 )
 
 // Server S3服务器
@@ -84,10 +93,25 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// 2. 检查是否是API管理路径
 	if strings.HasPrefix(r.URL.Path, "/api/") {
-		// API路径需要认证
-		if !s.checkAuth(r, w) {
+		// 管理员登录接口不需要认证
+		if strings.HasPrefix(r.URL.Path, "/api/admin/login") {
+			s.handleAdminLogin(w, r)
 			return
 		}
+		// 管理 API 需要管理员认证（使用 session token）
+		if strings.HasPrefix(r.URL.Path, "/api/admin/") {
+			if !s.checkAdminAuth(r, w) {
+				return
+			}
+			s.handleAdminAPI(w, r)
+			return
+		}
+		// 其他 API 路径需要 S3 认证
+		newReq, ok := s.checkAuth(r, w)
+		if !ok {
+			return
+		}
+		r = newReq
 		// 交给API处理器
 		if strings.HasPrefix(r.URL.Path, "/api/presign") {
 			s.handlePresign(w, r)
@@ -109,29 +133,38 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. 认证检查
+	var isPublicAccess bool
 	if bucket != "" {
-		// 检查桶是否为公有（只对GET请求）
+		// 检查桶是否为公有（只对GET/HEAD请求）
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
 			if bucketInfo, err := s.metadata.GetBucket(bucket); err == nil && bucketInfo != nil && bucketInfo.IsPublic {
 				// 公有桶的GET/HEAD请求跳过认证
 				utils.Debug("public bucket access", "bucket", bucket, "method", r.Method)
-			} else {
-				// 私有桶或检查失败需要认证
-				if !s.checkAuth(r, w) {
-					return
-				}
+				isPublicAccess = true
 			}
-		} else {
-			// 非GET请求需要认证
-			if !s.checkAuth(r, w) {
+		}
+
+		if !isPublicAccess {
+			// 需要认证
+			newReq, ok := s.checkAuth(r, w)
+			if !ok {
+				return
+			}
+			r = newReq
+
+			// 检查桶权限（创建/删除桶只有旧配置的管理员 Key 能操作）
+			needWrite := r.Method != http.MethodGet && r.Method != http.MethodHead
+			if !s.checkBucketPermission(r, w, bucket, needWrite) {
 				return
 			}
 		}
 	} else {
 		// ListBuckets需要认证
-		if !s.checkAuth(r, w) {
+		newReq, ok := s.checkAuth(r, w)
+		if !ok {
 			return
 		}
+		r = newReq
 	}
 
 	// 重新解析路径（之前的bucket已经获取了）
@@ -509,26 +542,44 @@ func (s *Server) handleBucketHeadObjectAPI(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-// checkAuth 检查认证
-func (s *Server) checkAuth(r *http.Request, w http.ResponseWriter) bool {
+// checkAuth 检查认证，返回新的带有 accessKeyID 上下文的 request
+func (s *Server) checkAuth(r *http.Request, w http.ResponseWriter) (*http.Request, bool) {
 	hasSignature := r.URL.Query().Get("X-Amz-Signature") != ""
 	hasAuthHeader := r.Header.Get("Authorization") != ""
 
 	// 如果没有任何认证信息，拒绝访问
 	if !hasSignature && !hasAuthHeader {
 		utils.WriteError(w, utils.ErrAccessDenied, http.StatusForbidden, r.URL.Path)
-		return false
+		return nil, false
 	}
 
-	// 验证认证信息
-	if !auth.VerifyRequest(r) {
+	// 验证认证信息并获取 Access Key ID
+	accessKeyID, ok := auth.VerifyRequestAndGetAccessKey(r)
+	if !ok {
 		if hasAuthHeader {
 			utils.WriteError(w, utils.ErrSignatureDoesNotMatch, http.StatusForbidden, r.URL.Path)
 		} else {
 			utils.WriteError(w, utils.ErrAccessDenied, http.StatusForbidden, r.URL.Path)
 		}
+		return nil, false
+	}
+
+	// 将 accessKeyID 存入请求上下文
+	ctx := context.WithValue(r.Context(), ContextKeyAccessKeyID, accessKeyID)
+	return r.WithContext(ctx), true
+}
+
+// checkBucketPermission 检查桶访问权限
+func (s *Server) checkBucketPermission(r *http.Request, w http.ResponseWriter, bucket string, needWrite bool) bool {
+	accessKeyID, _ := r.Context().Value(ContextKeyAccessKeyID).(string)
+	if accessKeyID == "" {
+		utils.WriteError(w, utils.ErrAccessDenied, http.StatusForbidden, r.URL.Path)
 		return false
 	}
 
+	if !auth.CheckBucketPermission(accessKeyID, bucket, needWrite) {
+		utils.WriteError(w, utils.ErrAccessDenied, http.StatusForbidden, r.URL.Path)
+		return false
+	}
 	return true
 }

@@ -8,22 +8,26 @@
       <el-menu mode="horizontal" :default-active="route.name as string" router background-color="#409EFF" text-color="#fff" active-text-color="#ffd04b">
         <el-menu-item index="Buckets" :route="{ name: 'Buckets' }">
           <el-icon><Folder /></el-icon>
-          存储桶
+          Buckets
+        </el-menu-item>
+        <el-menu-item index="ApiKeys" :route="{ name: 'ApiKeys' }">
+          <el-icon><Key /></el-icon>
+          API Keys
         </el-menu-item>
         <el-menu-item index="Tools" :route="{ name: 'Tools' }">
           <el-icon><Tools /></el-icon>
-          工具
+          Tools
         </el-menu-item>
       </el-menu>
       <div class="user-info">
         <el-dropdown @command="handleCommand">
           <span class="el-dropdown-link">
-            {{ auth.accessKeyId }}
+            Admin
             <el-icon class="el-icon--right"><ArrowDown /></el-icon>
           </span>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+              <el-dropdown-item command="logout">Logout</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -38,13 +42,21 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import axios from 'axios'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 
-function handleCommand(cmd: string) {
+async function handleCommand(cmd: string) {
   if (cmd === 'logout') {
+    try {
+      await axios.post(`${auth.endpoint}/api/admin/logout`, {}, {
+        headers: auth.getAdminHeaders()
+      })
+    } catch {
+      // Ignore logout errors
+    }
     auth.logout()
     router.push('/login')
   }
