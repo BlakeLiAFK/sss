@@ -1,115 +1,147 @@
 <template>
-  <div class="tools-page">
-    <el-row :gutter="20">
+  <div class="page-container">
+    <div class="page-header">
+      <div class="page-title">
+        <h1>Tools</h1>
+        <p class="page-subtitle">Developer utilities and configuration</p>
+      </div>
+    </div>
+
+    <el-row :gutter="24">
       <el-col :span="12">
-        <el-card>
-          <template #header>
-            <span>预签名URL生成器</span>
-          </template>
-
-          <el-form :model="presignForm" label-width="120px">
-            <el-form-item label="存储桶">
-              <el-select v-model="presignForm.bucket" placeholder="选择存储桶" @change="loadBucketObjects">
-                <el-option v-for="b in buckets" :key="b.Name" :label="b.Name" :value="b.Name" />
-              </el-select>
-            </el-form-item>
-
-            <el-form-item label="对象路径">
-              <el-input v-model="presignForm.key" placeholder="输入或选择对象路径">
-                <template #append>
-                  <el-select v-model="presignForm.key" placeholder="选择对象" style="width: 200px">
-                    <el-option v-for="o in bucketObjects" :key="o.Key" :label="o.Key" :value="o.Key" />
-                  </el-select>
-                </template>
-              </el-input>
-            </el-form-item>
-
-            <el-form-item label="HTTP方法">
-              <el-select v-model="presignForm.method">
-                <el-option label="PUT (上传)" value="PUT" />
-                <el-option label="GET (下载)" value="GET" />
-                <el-option label="DELETE (删除)" value="DELETE" />
-                <el-option label="HEAD (信息)" value="HEAD" />
-              </el-select>
-            </el-form-item>
-
-            <el-form-item label="有效期">
-              <el-select v-model="presignForm.expiresMinutes">
-                <el-option label="15分钟" :value="15" />
-                <el-option label="1小时" :value="60" />
-                <el-option label="6小时" :value="360" />
-                <el-option label="12小时" :value="720" />
-                <el-option label="24小时" :value="1440" />
-                <el-option label="7天" :value="10080" />
-              </el-select>
-            </el-form-item>
-
-            <el-form-item label="大小限制(MB)">
-              <el-input-number
-                v-model="presignForm.maxSizeMB"
-                :min="0"
-                :max="1024"
-                placeholder="0=不限制"
-                style="width: 200px"
-              />
-            </el-form-item>
-
-            <el-form-item label="内容类型">
-              <el-input v-model="presignForm.contentType" placeholder="例如: image/jpeg" />
-            </el-form-item>
-
-            <el-form-item>
-              <el-button type="primary" @click="handleGeneratePresignedUrl" :loading="generating">生成URL</el-button>
-              <el-button @click="clearForm">清空</el-button>
-            </el-form-item>
-          </el-form>
-
-          <div v-if="presignedUrl" class="result-box">
-            <el-input v-model="presignedUrl" type="textarea" :rows="3" readonly />
-            <el-button type="primary" size="small" @click="copyUrl" style="margin-top: 10px">
-              复制
-            </el-button>
+        <div class="content-card">
+          <div class="card-header">
+            <h3>Presigned URL Generator</h3>
           </div>
-        </el-card>
+          <div class="card-body">
+            <el-form :model="presignForm" label-position="top">
+              <el-form-item label="Bucket">
+                <el-select
+                  v-model="presignForm.bucket"
+                  placeholder="Select bucket"
+                  @change="loadBucketObjects"
+                  style="width: 100%"
+                >
+                  <el-option v-for="b in buckets" :key="b.Name" :label="b.Name" :value="b.Name" />
+                </el-select>
+              </el-form-item>
+
+              <el-form-item label="Object Path">
+                <el-input v-model="presignForm.key" placeholder="Enter or select object path">
+                  <template #append>
+                    <el-select
+                      v-model="presignForm.key"
+                      placeholder="Select"
+                      style="width: 160px"
+                      :disabled="!presignForm.bucket"
+                    >
+                      <el-option v-for="o in bucketObjects" :key="o.Key" :label="o.Key" :value="o.Key" />
+                    </el-select>
+                  </template>
+                </el-input>
+              </el-form-item>
+
+              <el-row :gutter="16">
+                <el-col :span="12">
+                  <el-form-item label="HTTP Method">
+                    <el-select v-model="presignForm.method" style="width: 100%">
+                      <el-option label="PUT (Upload)" value="PUT" />
+                      <el-option label="GET (Download)" value="GET" />
+                      <el-option label="DELETE (Delete)" value="DELETE" />
+                      <el-option label="HEAD (Info)" value="HEAD" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="Expiration">
+                    <el-select v-model="presignForm.expiresMinutes" style="width: 100%">
+                      <el-option label="15 minutes" :value="15" />
+                      <el-option label="1 hour" :value="60" />
+                      <el-option label="6 hours" :value="360" />
+                      <el-option label="12 hours" :value="720" />
+                      <el-option label="24 hours" :value="1440" />
+                      <el-option label="7 days" :value="10080" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+
+              <el-row :gutter="16">
+                <el-col :span="12">
+                  <el-form-item label="Max Size (MB)">
+                    <el-input-number
+                      v-model="presignForm.maxSizeMB"
+                      :min="0"
+                      :max="1024"
+                      placeholder="0 = No limit"
+                      style="width: 100%"
+                    />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="Content Type">
+                    <el-input v-model="presignForm.contentType" placeholder="e.g., image/jpeg" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+
+              <el-form-item>
+                <el-button type="primary" @click="handleGeneratePresignedUrl" :loading="generating">
+                  Generate URL
+                </el-button>
+                <el-button @click="clearForm">Clear</el-button>
+              </el-form-item>
+            </el-form>
+
+            <div v-if="presignedUrl" class="result-box">
+              <label>Generated URL</label>
+              <el-input v-model="presignedUrl" type="textarea" :rows="3" readonly />
+              <el-button type="primary" size="small" @click="copyUrl" style="margin-top: 12px">
+                <el-icon><CopyDocument /></el-icon>
+                Copy URL
+              </el-button>
+            </div>
+          </div>
+        </div>
       </el-col>
 
       <el-col :span="12">
-        <el-card>
-          <template #header>
-            <span>服务器信息</span>
-          </template>
+        <div class="content-card">
+          <div class="card-header">
+            <h3>Server Information</h3>
+          </div>
+          <div class="card-body">
+            <div class="info-grid">
+              <div class="info-item">
+                <label>Endpoint</label>
+                <span>{{ auth.endpoint }}</span>
+              </div>
+              <div class="info-item">
+                <label>Region</label>
+                <span>{{ auth.region }}</span>
+              </div>
+              <div class="info-item">
+                <label>Buckets</label>
+                <span>{{ buckets.length }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
 
-          <el-descriptions :column="1" border>
-            <el-descriptions-item label="Endpoint">
-              {{ auth.endpoint }}
-            </el-descriptions-item>
-            <el-descriptions-item label="Region">
-              {{ auth.region }}
-            </el-descriptions-item>
-            <el-descriptions-item label="Access Key ID">
-              {{ auth.accessKeyId }}
-            </el-descriptions-item>
-            <el-descriptions-item label="存储桶数量">
-              {{ buckets.length }}
-            </el-descriptions-item>
-          </el-descriptions>
-        </el-card>
-
-        <el-card style="margin-top: 20px">
-          <template #header>
-            <span>AWS CLI 配置</span>
-          </template>
-
-          <el-input
-            type="textarea"
-            :rows="8"
-            readonly
-            :value="awsCliConfig"
-          />
-          <el-button type="primary" size="small" @click="copyAwsConfig" style="margin-top: 10px">
-            复制配置
-          </el-button>
-        </el-card>
+        <div class="content-card" style="margin-top: 24px">
+          <div class="card-header">
+            <h3>AWS CLI Configuration</h3>
+          </div>
+          <div class="card-body">
+            <div class="code-block">
+              <pre>{{ awsCliConfig }}</pre>
+            </div>
+            <el-button type="primary" size="small" @click="copyAwsConfig" style="margin-top: 12px">
+              <el-icon><CopyDocument /></el-icon>
+              Copy Configuration
+            </el-button>
+          </div>
+        </div>
       </el-col>
     </el-row>
   </div>
@@ -118,6 +150,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { CopyDocument } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { listBuckets, listObjects, generatePresignedUrl, type Bucket, type S3Object } from '../api/s3'
 
@@ -140,15 +173,15 @@ const presignForm = reactive({
 const awsCliConfig = computed(() => {
   return `# ~/.aws/credentials
 [sss]
-aws_access_key_id = ${auth.accessKeyId}
-aws_secret_access_key = ${auth.secretAccessKey}
+aws_access_key_id = YOUR_ACCESS_KEY_ID
+aws_secret_access_key = YOUR_SECRET_ACCESS_KEY
 
 # ~/.aws/config
 [profile sss]
 region = ${auth.region}
 output = json
 
-# 使用示例
+# Usage examples
 aws --endpoint-url ${auth.endpoint} --profile sss s3 ls
 aws --endpoint-url ${auth.endpoint} --profile sss s3 mb s3://my-bucket
 aws --endpoint-url ${auth.endpoint} --profile sss s3 cp file.txt s3://my-bucket/`
@@ -174,13 +207,12 @@ async function loadBucketObjects() {
 
 async function handleGeneratePresignedUrl() {
   if (!presignForm.bucket || !presignForm.key) {
-    ElMessage.warning('请输入存储桶和对象路径')
+    ElMessage.warning('Please select bucket and object path')
     return
   }
 
   generating.value = true
   try {
-    // 调用从 api/s3 导入的 generatePresignedUrl 函数
     const result = await generatePresignedUrl({
       bucket: presignForm.bucket,
       key: presignForm.key,
@@ -192,18 +224,17 @@ async function handleGeneratePresignedUrl() {
 
     presignedUrl.value = result.url
 
-    // 显示额外信息
-    let info = `成功生成${result.method}预签名URL`
+    let info = `Generated ${result.method} presigned URL`
     if (presignForm.maxSizeMB > 0) {
-      info += `，最大限制${presignForm.maxSizeMB}MB`
+      info += `, max ${presignForm.maxSizeMB}MB`
     }
     if (presignForm.contentType) {
-      info += `，内容类型${presignForm.contentType}`
+      info += `, type: ${presignForm.contentType}`
     }
     ElMessage.success(info)
   } catch (error: any) {
-    console.error('生成预签名URL失败:', error)
-    ElMessage.error(error.response?.data?.message || '生成预签名URL失败')
+    console.error('Failed to generate presigned URL:', error)
+    ElMessage.error(error.response?.data?.message || 'Failed to generate presigned URL')
   } finally {
     generating.value = false
   }
@@ -211,12 +242,12 @@ async function handleGeneratePresignedUrl() {
 
 function copyUrl() {
   navigator.clipboard.writeText(presignedUrl.value)
-  ElMessage.success('已复制到剪贴板')
+  ElMessage.success('Copied to clipboard')
 }
 
 function copyAwsConfig() {
   navigator.clipboard.writeText(awsCliConfig.value)
-  ElMessage.success('已复制到剪贴板')
+  ElMessage.success('Copied to clipboard')
 }
 
 function clearForm() {
@@ -232,14 +263,111 @@ function clearForm() {
 </script>
 
 <style scoped>
-.tools-page {
+.page-container {
   max-width: 1200px;
+  margin: 0 auto;
+}
+
+.page-header {
+  margin-bottom: 24px;
+}
+
+.page-title h1 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: #64748b;
+  margin: 4px 0 0;
+}
+
+.content-card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.card-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.card-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+}
+
+.card-body {
+  padding: 24px;
 }
 
 .result-box {
   margin-top: 20px;
-  padding: 15px;
-  background-color: #f5f7fa;
-  border-radius: 4px;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.result-box label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.info-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.info-item:last-child {
+  border-bottom: none;
+}
+
+.info-item label {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.info-item span {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.code-block {
+  background: #1e293b;
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+}
+
+.code-block pre {
+  margin: 0;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  font-size: 13px;
+  color: #e2e8f0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 </style>

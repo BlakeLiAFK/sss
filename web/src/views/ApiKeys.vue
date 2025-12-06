@@ -1,155 +1,244 @@
 <template>
-  <div class="apikeys-container">
-    <div class="header">
-      <h2>API Keys</h2>
-      <el-button type="primary" @click="showCreateDialog">
-        <el-icon><Plus /></el-icon>
-        Create API Key
-      </el-button>
+  <div class="page-container">
+    <div class="page-header">
+      <div class="page-title">
+        <h1>API Keys</h1>
+        <p class="page-subtitle">Manage access credentials for S3 API</p>
+      </div>
+      <div class="page-actions">
+        <el-button type="primary" @click="showCreateDialog">
+          <el-icon><Plus /></el-icon>
+          Create API Key
+        </el-button>
+      </div>
     </div>
 
-    <el-table :data="apiKeys" v-loading="loading" stripe>
-      <el-table-column prop="access_key_id" label="Access Key ID" width="220">
-        <template #default="{ row }">
-          <code>{{ row.access_key_id }}</code>
-        </template>
-      </el-table-column>
-      <el-table-column prop="description" label="Description" min-width="150" />
-      <el-table-column prop="created_at" label="Created At" width="180">
-        <template #default="{ row }">
-          {{ formatDate(row.created_at) }}
-        </template>
-      </el-table-column>
-      <el-table-column prop="enabled" label="Status" width="100">
-        <template #default="{ row }">
-          <el-switch
-            v-model="row.enabled"
-            @change="toggleEnabled(row)"
-          />
-        </template>
-      </el-table-column>
-      <el-table-column label="Permissions" min-width="200">
-        <template #default="{ row }">
-          <div class="permissions-list">
-            <el-tag
-              v-for="perm in row.permissions"
-              :key="perm.bucket_name"
-              size="small"
-              :type="getPermTagType(perm)"
-              class="perm-tag"
-            >
-              {{ perm.bucket_name }}:
-              {{ perm.can_read ? 'R' : '' }}{{ perm.can_write ? 'W' : '' }}
-            </el-tag>
-            <el-tag v-if="!row.permissions?.length" size="small" type="info">
-              No permissions
-            </el-tag>
-          </div>
-        </template>
-      </el-table-column>
-      <el-table-column label="Actions" width="180" fixed="right">
-        <template #default="{ row }">
-          <el-button size="small" @click="showPermDialog(row)">
-            Permissions
-          </el-button>
-          <el-button size="small" type="danger" @click="deleteKey(row)">
-            Delete
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <div class="content-card">
+      <el-table
+        :data="apiKeys"
+        v-loading="loading"
+        class="data-table"
+        :header-cell-style="{ background: '#f8fafc', color: '#475569', fontWeight: 600 }"
+      >
+        <el-table-column prop="access_key_id" label="Access Key ID" width="220">
+          <template #default="{ row }">
+            <div class="key-cell">
+              <code class="key-code">{{ row.access_key_id }}</code>
+              <el-button
+                text
+                size="small"
+                class="copy-btn"
+                @click="copyToClipboard(row.access_key_id)"
+              >
+                <el-icon><CopyDocument /></el-icon>
+              </el-button>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="description" label="Description" min-width="150">
+          <template #default="{ row }">
+            <span class="desc-text">{{ row.description || '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="Created" width="160">
+          <template #default="{ row }">
+            <span class="date-text">{{ formatDate(row.created_at) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="enabled" label="Status" width="100" align="center">
+          <template #default="{ row }">
+            <el-switch
+              v-model="row.enabled"
+              @change="toggleEnabled(row)"
+              :active-text="''"
+              :inactive-text="''"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column label="Permissions" min-width="220">
+          <template #default="{ row }">
+            <div class="permissions-list">
+              <el-tag
+                v-for="perm in row.permissions"
+                :key="perm.bucket_name"
+                size="small"
+                :type="getPermTagType(perm)"
+                class="perm-tag"
+              >
+                <span class="perm-bucket">{{ perm.bucket_name }}</span>
+                <span class="perm-flags">{{ perm.can_read ? 'R' : '' }}{{ perm.can_write ? 'W' : '' }}</span>
+              </el-tag>
+              <span v-if="!row.permissions?.length" class="no-perm">No permissions</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="Actions" width="180" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button size="small" @click="showPermDialog(row)">
+              <el-icon><Setting /></el-icon>
+              Permissions
+            </el-button>
+            <el-button size="small" type="danger" text @click="deleteKey(row)">
+              <el-icon><Delete /></el-icon>
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-empty v-if="!loading && apiKeys.length === 0" description="No API keys yet">
+        <el-button type="primary" @click="showCreateDialog">
+          Create your first API key
+        </el-button>
+      </el-empty>
+    </div>
 
     <!-- Create API Key Dialog -->
-    <el-dialog v-model="createDialogVisible" title="Create API Key" width="450px">
-      <el-form :model="createForm" label-width="100px">
+    <el-dialog
+      v-model="createDialogVisible"
+      title="Create API Key"
+      width="450px"
+      :close-on-click-modal="false"
+    >
+      <el-form :model="createForm" label-position="top">
         <el-form-item label="Description">
-          <el-input v-model="createForm.description" placeholder="e.g., Production Server" />
+          <el-input
+            v-model="createForm.description"
+            placeholder="e.g., Production Server, Development"
+            size="large"
+          />
+          <div class="form-hint">A friendly name to identify this key</div>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createDialogVisible = false">Cancel</el-button>
-        <el-button type="primary" @click="createKey" :loading="creating">Create</el-button>
+        <el-button type="primary" @click="createKey" :loading="creating">
+          Create Key
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- Show Secret Key Dialog -->
-    <el-dialog v-model="secretDialogVisible" title="API Key Created" width="550px" :close-on-click-modal="false">
-      <el-alert type="warning" :closable="false" show-icon style="margin-bottom: 16px">
-        Please save the Secret Access Key now. You won't be able to see it again!
+    <el-dialog
+      v-model="secretDialogVisible"
+      title="API Key Created"
+      width="550px"
+      :close-on-click-modal="false"
+      :show-close="false"
+    >
+      <el-alert
+        type="warning"
+        :closable="false"
+        show-icon
+        class="secret-warning"
+      >
+        <template #title>
+          <strong>Save your Secret Access Key now!</strong>
+        </template>
+        This is the only time you'll be able to see it. Store it securely.
       </el-alert>
-      <el-descriptions :column="1" border>
-        <el-descriptions-item label="Access Key ID">
-          <code>{{ newKey.access_key_id }}</code>
-          <el-button size="small" text @click="copyToClipboard(newKey.access_key_id)">
-            <el-icon><CopyDocument /></el-icon>
-          </el-button>
-        </el-descriptions-item>
-        <el-descriptions-item label="Secret Access Key">
-          <code>{{ newKey.secret_access_key }}</code>
-          <el-button size="small" text @click="copyToClipboard(newKey.secret_access_key)">
-            <el-icon><CopyDocument /></el-icon>
-          </el-button>
-        </el-descriptions-item>
-      </el-descriptions>
+
+      <div class="secret-info">
+        <div class="secret-row">
+          <label>Access Key ID</label>
+          <div class="secret-value">
+            <code>{{ newKey.access_key_id }}</code>
+            <el-button text size="small" @click="copyToClipboard(newKey.access_key_id)">
+              <el-icon><CopyDocument /></el-icon>
+            </el-button>
+          </div>
+        </div>
+        <div class="secret-row">
+          <label>Secret Access Key</label>
+          <div class="secret-value">
+            <code class="secret-key">{{ newKey.secret_access_key }}</code>
+            <el-button text size="small" @click="copyToClipboard(newKey.secret_access_key)">
+              <el-icon><CopyDocument /></el-icon>
+            </el-button>
+          </div>
+        </div>
+      </div>
+
       <template #footer>
-        <el-button type="primary" @click="secretDialogVisible = false">I've saved it</el-button>
+        <el-button type="primary" @click="secretDialogVisible = false">
+          I've saved my key
+        </el-button>
       </template>
     </el-dialog>
 
     <!-- Permissions Dialog -->
-    <el-dialog v-model="permDialogVisible" title="Manage Permissions" width="600px">
-      <div v-if="selectedKey">
-        <div class="perm-header">
-          <span>API Key: <code>{{ selectedKey.access_key_id }}</code></span>
+    <el-dialog
+      v-model="permDialogVisible"
+      title="Manage Permissions"
+      width="600px"
+      :close-on-click-modal="false"
+    >
+      <div v-if="selectedKey" class="perm-dialog-content">
+        <div class="perm-key-info">
+          <label>API Key:</label>
+          <code>{{ selectedKey.access_key_id }}</code>
         </div>
 
-        <el-table :data="selectedKey.permissions" size="small" style="margin-bottom: 16px">
-          <el-table-column prop="bucket_name" label="Bucket" />
-          <el-table-column prop="can_read" label="Read" width="80">
-            <template #default="{ row }">
-              <el-icon v-if="row.can_read" color="#67C23A"><Check /></el-icon>
-              <el-icon v-else color="#909399"><Close /></el-icon>
-            </template>
-          </el-table-column>
-          <el-table-column prop="can_write" label="Write" width="80">
-            <template #default="{ row }">
-              <el-icon v-if="row.can_write" color="#67C23A"><Check /></el-icon>
-              <el-icon v-else color="#909399"><Close /></el-icon>
-            </template>
-          </el-table-column>
-          <el-table-column label="" width="80">
-            <template #default="{ row }">
-              <el-button size="small" type="danger" text @click="removePerm(row.bucket_name)">
-                Remove
+        <div class="perm-section">
+          <h4>Current Permissions</h4>
+          <el-table
+            :data="selectedKey.permissions"
+            size="small"
+            class="perm-table"
+            v-if="selectedKey.permissions?.length"
+          >
+            <el-table-column prop="bucket_name" label="Bucket" />
+            <el-table-column label="Read" width="80" align="center">
+              <template #default="{ row }">
+                <el-icon v-if="row.can_read" color="#10b981" :size="18"><CircleCheck /></el-icon>
+                <el-icon v-else color="#94a3b8" :size="18"><CircleClose /></el-icon>
+              </template>
+            </el-table-column>
+            <el-table-column label="Write" width="80" align="center">
+              <template #default="{ row }">
+                <el-icon v-if="row.can_write" color="#10b981" :size="18"><CircleCheck /></el-icon>
+                <el-icon v-else color="#94a3b8" :size="18"><CircleClose /></el-icon>
+              </template>
+            </el-table-column>
+            <el-table-column width="80" align="center">
+              <template #default="{ row }">
+                <el-button size="small" type="danger" text @click="removePerm(row.bucket_name)">
+                  Remove
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-else class="no-perm-msg">No permissions configured</div>
+        </div>
+
+        <el-divider />
+
+        <div class="perm-section">
+          <h4>Add Permission</h4>
+          <el-form :model="permForm" inline class="add-perm-form">
+            <el-form-item label="Bucket">
+              <el-select v-model="permForm.bucket_name" placeholder="Select bucket" style="width: 180px">
+                <el-option label="* (All Buckets)" value="*" />
+                <el-option
+                  v-for="bucket in buckets"
+                  :key="bucket.name"
+                  :label="bucket.name"
+                  :value="bucket.name"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="Read">
+              <el-switch v-model="permForm.can_read" />
+            </el-form-item>
+            <el-form-item label="Write">
+              <el-switch v-model="permForm.can_write" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="addPerm" :loading="addingPerm">
+                Add
               </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <el-divider>Add Permission</el-divider>
-
-        <el-form :model="permForm" inline>
-          <el-form-item label="Bucket">
-            <el-select v-model="permForm.bucket_name" placeholder="Select bucket" style="width: 180px">
-              <el-option label="* (All Buckets)" value="*" />
-              <el-option
-                v-for="bucket in buckets"
-                :key="bucket.name"
-                :label="bucket.name"
-                :value="bucket.name"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="Read">
-            <el-switch v-model="permForm.can_read" />
-          </el-form-item>
-          <el-form-item label="Write">
-            <el-switch v-model="permForm.can_write" />
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" @click="addPerm" :loading="addingPerm">Add</el-button>
-          </el-form-item>
-        </el-form>
+            </el-form-item>
+          </el-form>
+        </div>
       </div>
       <template #footer>
         <el-button @click="permDialogVisible = false">Close</el-button>
@@ -161,6 +250,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, CopyDocument, Setting, Delete, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import axios from 'axios'
 
@@ -268,7 +358,7 @@ async function toggleEnabled(key: APIKey) {
     })
     ElMessage.success(key.enabled ? 'API Key enabled' : 'API Key disabled')
   } catch (e: any) {
-    key.enabled = !key.enabled // Revert
+    key.enabled = !key.enabled
     ElMessage.error('Failed to update API key: ' + e.message)
   }
 }
@@ -276,9 +366,13 @@ async function toggleEnabled(key: APIKey) {
 async function deleteKey(key: APIKey) {
   try {
     await ElMessageBox.confirm(
-      `Are you sure you want to delete API Key "${key.access_key_id}"?`,
-      'Confirm Delete',
-      { type: 'warning' }
+      `Are you sure you want to delete this API Key? This action cannot be undone.`,
+      'Delete API Key',
+      {
+        type: 'warning',
+        confirmButtonText: 'Delete',
+        confirmButtonClass: 'el-button--danger'
+      }
     )
     await axios.delete(`${auth.endpoint}/api/admin/apikeys/${key.access_key_id}`, {
       headers: getHeaders()
@@ -314,7 +408,6 @@ async function addPerm() {
       { headers: getHeaders() }
     )
     selectedKey.value = response.data
-    // Update in list
     const idx = apiKeys.value.findIndex(k => k.access_key_id === selectedKey.value?.access_key_id)
     if (idx >= 0) {
       apiKeys.value[idx] = response.data
@@ -336,7 +429,6 @@ async function removePerm(bucketName: string) {
       { headers: getHeaders() }
     )
     selectedKey.value = response.data
-    // Update in list
     const idx = apiKeys.value.findIndex(k => k.access_key_id === selectedKey.value?.access_key_id)
     if (idx >= 0) {
       apiKeys.value[idx] = response.data
@@ -348,7 +440,11 @@ async function removePerm(bucketName: string) {
 }
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleString()
+  return new Date(dateStr).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  })
 }
 
 function getPermTagType(perm: Permission) {
@@ -373,39 +469,230 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.apikeys-container {
-  padding: 20px;
+.page-container {
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
-.header {
+.page-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
+  align-items: flex-start;
+  margin-bottom: 24px;
 }
 
-.header h2 {
+.page-title h1 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1e293b;
   margin: 0;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: #64748b;
+  margin: 4px 0 0;
+}
+
+.page-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.content-card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.data-table {
+  width: 100%;
+}
+
+.data-table :deep(.el-table__header th) {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.key-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.key-code {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  font-size: 13px;
+  background: #f1f5f9;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: #334155;
+}
+
+.copy-btn {
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.key-cell:hover .copy-btn {
+  opacity: 1;
+}
+
+.desc-text {
+  color: #64748b;
+}
+
+.date-text {
+  color: #64748b;
+  font-size: 13px;
 }
 
 .permissions-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
 }
 
 .perm-tag {
-  font-family: monospace;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  font-size: 11px;
 }
 
-.perm-header {
+.perm-bucket {
+  margin-right: 4px;
+}
+
+.perm-flags {
+  font-weight: 600;
+}
+
+.no-perm {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.form-hint {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 6px;
+}
+
+.secret-warning {
+  margin-bottom: 20px;
+}
+
+.secret-info {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.secret-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   margin-bottom: 16px;
+}
+
+.secret-row:last-child {
+  margin-bottom: 0;
+}
+
+.secret-row label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.secret-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.secret-value code {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  font-size: 14px;
+  background: #ffffff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  flex: 1;
+  word-break: break-all;
+}
+
+.secret-key {
+  color: #dc2626;
+}
+
+.perm-dialog-content {
+  padding: 0;
+}
+
+.perm-key-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
   font-size: 14px;
 }
 
-.perm-header code {
-  background: #f5f7fa;
-  padding: 2px 6px;
+.perm-key-info label {
+  color: #64748b;
+}
+
+.perm-key-info code {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+  background: #f1f5f9;
+  padding: 4px 8px;
   border-radius: 4px;
+}
+
+.perm-section h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0 0 12px;
+}
+
+.perm-table {
+  margin-bottom: 8px;
+}
+
+.no-perm-msg {
+  color: #94a3b8;
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+
+.add-perm-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+:deep(.el-dialog__header) {
+  padding: 20px 24px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+:deep(.el-dialog__body) {
+  padding: 24px;
+}
+
+:deep(.el-dialog__footer) {
+  padding: 16px 24px;
+  border-top: 1px solid #f1f5f9;
+}
+
+:deep(.el-divider) {
+  margin: 20px 0;
 }
 </style>

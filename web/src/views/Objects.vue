@@ -1,144 +1,190 @@
 <template>
-  <div class="objects-page">
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <div class="breadcrumb">
-            <router-link to="/" class="back-link">存储桶</router-link>
-            <el-icon><ArrowRight /></el-icon>
-            <span>{{ bucketName }}</span>
-            <span v-if="prefix" class="prefix">/ {{ prefix }}</span>
-          </div>
-          <div class="header-actions">
-            <el-input
-              v-model="searchKeyword"
-              placeholder="搜索文件名..."
-              clearable
-              class="search-input"
-              @input="handleSearchInput"
-              @clear="handleSearchClear"
-            >
-              <template #prefix>
-                <el-icon><Search /></el-icon>
-              </template>
-            </el-input>
-            <el-upload
-              :show-file-list="false"
-              :before-upload="handleUpload"
-              :accept="'*/*'"
-              multiple
-            >
-              <el-button type="primary">
-                <el-icon><Upload /></el-icon>
-                上传文件
-              </el-button>
-            </el-upload>
-          </div>
+  <div class="page-container">
+    <div class="page-header">
+      <div class="page-title">
+        <div class="breadcrumb">
+          <router-link to="/" class="breadcrumb-link">Buckets</router-link>
+          <el-icon class="breadcrumb-separator"><ArrowRight /></el-icon>
+          <span class="breadcrumb-current">{{ bucketName }}</span>
+          <span v-if="prefix" class="breadcrumb-prefix">/ {{ prefix }}</span>
         </div>
-      </template>
-
-      <!-- 搜索模式提示 -->
-      <div v-if="isSearchMode" class="search-info">
-        <el-tag type="info" effect="plain">
-          <el-icon><Search /></el-icon>
-          搜索 "{{ searchKeyword }}" 找到 {{ searchCount }} 个结果
-        </el-tag>
-        <el-button text type="primary" @click="handleSearchClear">清除搜索</el-button>
+        <p class="page-subtitle">Browse and manage files</p>
       </div>
+      <div class="page-actions">
+        <el-input
+          v-model="searchKeyword"
+          placeholder="Search files..."
+          clearable
+          class="search-input"
+          @input="handleSearchInput"
+          @clear="handleSearchClear"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+        <el-upload
+          :show-file-list="false"
+          :before-upload="handleUpload"
+          :accept="'*/*'"
+          multiple
+        >
+          <el-button type="primary">
+            <el-icon><Upload /></el-icon>
+            Upload
+          </el-button>
+        </el-upload>
+      </div>
+    </div>
 
-      <el-table :data="displayObjects" v-loading="loading" stripe @row-dblclick="handleRowClick">
-        <el-table-column prop="Key" label="名称">
+    <!-- Search mode indicator -->
+    <div v-if="isSearchMode" class="search-info">
+      <el-tag type="info" effect="plain" size="small">
+        <el-icon><Search /></el-icon>
+        Found {{ searchCount }} results for "{{ searchKeyword }}"
+      </el-tag>
+      <el-button text type="primary" size="small" @click="handleSearchClear">Clear search</el-button>
+    </div>
+
+    <div class="content-card">
+      <el-table
+        :data="displayObjects"
+        v-loading="loading"
+        class="data-table"
+        :header-cell-style="{ background: '#f8fafc', color: '#475569', fontWeight: 600 }"
+        @row-dblclick="handleRowClick"
+      >
+        <el-table-column prop="Key" label="Name" min-width="300">
           <template #default="{ row }">
-            <div class="object-name">
-              <el-icon><Document /></el-icon>
-              {{ row.Key }}
+            <div class="file-cell">
+              <div class="file-icon">
+                <el-icon><Document /></el-icon>
+              </div>
+              <span class="file-name">{{ row.Key }}</span>
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="Size" label="大小" width="120">
+        <el-table-column prop="Size" label="Size" width="120">
           <template #default="{ row }">
-            {{ formatSize(row.Size) }}
+            <span class="size-text">{{ formatSize(row.Size) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="LastModified" label="修改时间" width="180">
+        <el-table-column prop="LastModified" label="Modified" width="180">
           <template #default="{ row }">
-            {{ formatDate(row.LastModified) }}
+            <span class="date-text">{{ formatDate(row.LastModified) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="320">
+        <el-table-column label="Actions" width="280" align="center">
           <template #default="{ row }">
-            <el-button size="small" @click="handleDownload(row.Key)">下载</el-button>
-            <el-button size="small" @click="handleCopyLink(row.Key)">复制链接</el-button>
-            <el-button size="small" @click="handleRename(row.Key)">重命名</el-button>
-            <el-button type="danger" size="small" @click="handleDelete(row.Key)">删除</el-button>
+            <el-button size="small" text @click="handleDownload(row.Key)">
+              <el-icon><Download /></el-icon>
+              Download
+            </el-button>
+            <el-button size="small" text @click="handleCopyLink(row.Key)">
+              <el-icon><Link /></el-icon>
+              Copy Link
+            </el-button>
+            <el-button size="small" text @click="handleRename(row.Key)">
+              <el-icon><Edit /></el-icon>
+            </el-button>
+            <el-button size="small" text type="danger" @click="handleDelete(row.Key)">
+              <el-icon><Delete /></el-icon>
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
 
-      <div class="pagination" v-if="isTruncated">
-        <el-button @click="loadMore">加载更多</el-button>
-      </div>
-    </el-card>
+      <el-empty v-if="!loading && displayObjects.length === 0" description="No files yet">
+        <el-upload
+          :show-file-list="false"
+          :before-upload="handleUpload"
+          :accept="'*/*'"
+          multiple
+        >
+          <el-button type="primary">Upload your first file</el-button>
+        </el-upload>
+      </el-empty>
 
-    <!-- 上传设置对话框 - GitHub风格 -->
-    <el-dialog v-model="uploadSettingVisible" title="上传文件" width="600px">
-      <div class="upload-github-style">
-        <p class="upload-tip">
-          <el-icon><InfoFilled /></el-icon>
-          可以为每个文件指定完整目标路径（类似 GitHub）
-        </p>
+      <div class="pagination" v-if="isTruncated && !isSearchMode">
+        <el-button @click="loadMore">Load More</el-button>
+      </div>
+    </div>
+
+    <!-- Upload Settings Dialog -->
+    <el-dialog
+      v-model="uploadSettingVisible"
+      title="Upload Files"
+      width="600px"
+      :close-on-click-modal="false"
+    >
+      <div class="upload-settings">
+        <el-alert type="info" :closable="false" class="upload-tip">
+          <template #title>
+            Specify the full target path for each file
+          </template>
+        </el-alert>
         <div class="file-list">
           <div v-for="(item, index) in pendingFilesWithPath" :key="index" class="file-item">
             <div class="file-info">
               <el-icon><Document /></el-icon>
               <span class="file-original-name">{{ item.file.name }}</span>
               <span class="file-size">({{ formatSize(item.file.size) }})</span>
+              <el-button type="danger" text size="small" class="remove-btn" @click="removePendingFile(index)">
+                <el-icon><Close /></el-icon>
+              </el-button>
             </div>
             <el-input
               v-model="item.targetPath"
-              placeholder="输入完整目标路径，如: images/2024/photo.jpg"
+              placeholder="e.g., images/2024/photo.jpg"
               class="file-path-input"
             >
               <template #prepend>/</template>
             </el-input>
-            <el-button type="danger" text @click="removePendingFile(index)">
-              <el-icon><Delete /></el-icon>
-            </el-button>
           </div>
         </div>
       </div>
       <template #footer>
-        <el-button @click="cancelUpload">取消</el-button>
+        <el-button @click="cancelUpload">Cancel</el-button>
         <el-button type="primary" @click="startUpload" :disabled="pendingFilesWithPath.length === 0">
-          开始上传 ({{ pendingFilesWithPath.length }} 个文件)
+          Upload {{ pendingFilesWithPath.length }} file(s)
         </el-button>
       </template>
     </el-dialog>
 
-    <!-- 上传进度 -->
-    <el-dialog v-model="uploadDialogVisible" title="上传进度" :close-on-click-modal="false" width="500px">
+    <!-- Upload Progress Dialog -->
+    <el-dialog
+      v-model="uploadDialogVisible"
+      title="Upload Progress"
+      :close-on-click-modal="false"
+      width="500px"
+    >
       <div v-for="(file, index) in uploadFiles" :key="index" class="upload-item">
         <span class="upload-file-path">{{ file.path }}</span>
         <el-progress :percentage="file.progress" :status="file.status" />
       </div>
     </el-dialog>
 
-    <!-- 重命名对话框 -->
-    <el-dialog v-model="renameDialogVisible" title="重命名/移动文件" width="500px">
-      <el-form label-width="80px">
-        <el-form-item label="原路径">
+    <!-- Rename Dialog -->
+    <el-dialog
+      v-model="renameDialogVisible"
+      title="Rename / Move File"
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-position="top">
+        <el-form-item label="Current Path">
           <el-input :model-value="renameOldKey" disabled />
         </el-form-item>
-        <el-form-item label="新路径">
-          <el-input v-model="renameNewKey" placeholder="输入新的完整路径">
+        <el-form-item label="New Path">
+          <el-input v-model="renameNewKey" placeholder="Enter new path">
             <template #prepend>/</template>
           </el-input>
-          <div class="form-tip">修改路径可以移动文件到不同目录</div>
+          <div class="form-hint">Change the path to move the file to a different directory</div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="renameDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmRename" :loading="renaming">确定</el-button>
+        <el-button @click="renameDialogVisible = false">Cancel</el-button>
+        <el-button type="primary" @click="confirmRename" :loading="renaming">Confirm</el-button>
       </template>
     </el-dialog>
   </div>
@@ -148,12 +194,10 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowRight, Upload, Document, Delete, InfoFilled, Search } from '@element-plus/icons-vue'
+import { ArrowRight, Upload, Document, Delete, Search, Download, Link, Edit, Close } from '@element-plus/icons-vue'
 import { listObjects, deleteObject, getObjectUrl, uploadObject, generatePresignedUrl, getBucketPublic, copyObject, searchObjects, type S3Object } from '../api/s3'
-import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
-const auth = useAuthStore()
 
 const bucketName = computed(() => route.params.name as string)
 const prefix = ref('')
@@ -166,7 +210,7 @@ const isPublic = ref(false)
 const uploadDialogVisible = ref(false)
 const uploadFiles = ref<{ path: string; progress: number; status?: 'success' | 'exception' }[]>([])
 
-// 搜索相关
+// Search related
 const searchKeyword = ref('')
 const searchResults = ref<S3Object[]>([])
 const searchCount = ref(0)
@@ -174,7 +218,7 @@ const isSearchMode = computed(() => searchKeyword.value.trim().length > 0)
 const displayObjects = computed(() => isSearchMode.value ? searchResults.value : objects.value)
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
-// 上传设置相关 - GitHub风格
+// Upload settings
 const uploadSettingVisible = ref(false)
 interface PendingFileWithPath {
   file: File
@@ -182,7 +226,7 @@ interface PendingFileWithPath {
 }
 const pendingFilesWithPath = ref<PendingFileWithPath[]>([])
 
-// 重命名相关
+// Rename related
 const renameDialogVisible = ref(false)
 const renameOldKey = ref('')
 const renameNewKey = ref('')
@@ -208,22 +252,18 @@ async function loadBucketPublicStatus() {
   }
 }
 
-// 搜索处理函数（带防抖）
 function handleSearchInput() {
-  // 清除之前的定时器
   if (searchDebounceTimer) {
     clearTimeout(searchDebounceTimer)
   }
 
   const keyword = searchKeyword.value.trim()
   if (!keyword) {
-    // 清空搜索时立即恢复
     searchResults.value = []
     searchCount.value = 0
     return
   }
 
-  // 防抖：300ms后执行搜索
   searchDebounceTimer = setTimeout(async () => {
     loading.value = true
     try {
@@ -231,14 +271,13 @@ function handleSearchInput() {
       searchResults.value = result.objects
       searchCount.value = result.count
     } catch (e: any) {
-      ElMessage.error('搜索失败: ' + e.message)
+      ElMessage.error('Search failed: ' + e.message)
     } finally {
       loading.value = false
     }
   }, 300)
 }
 
-// 清除搜索
 function handleSearchClear() {
   searchKeyword.value = ''
   searchResults.value = []
@@ -261,7 +300,7 @@ async function loadObjects(append = false) {
     isTruncated.value = result.isTruncated
     nextMarker.value = result.nextMarker
   } catch (e: any) {
-    ElMessage.error('加载失败: ' + e.message)
+    ElMessage.error('Failed to load: ' + e.message)
   } finally {
     loading.value = false
   }
@@ -291,7 +330,7 @@ async function handleDownload(key: string) {
     }
     window.open(url, '_blank')
   } catch (e: any) {
-    ElMessage.error('获取下载链接失败: ' + e.message)
+    ElMessage.error('Failed to get download link: ' + e.message)
   }
 }
 
@@ -310,26 +349,29 @@ async function handleCopyLink(key: string) {
       url = result.url
     }
     await navigator.clipboard.writeText(url)
-    ElMessage.success(isPublic.value ? '链接已复制' : '预签名链接已复制（1小时有效）')
+    ElMessage.success(isPublic.value ? 'Link copied' : 'Presigned link copied (valid for 1 hour)')
   } catch (e: any) {
-    ElMessage.error('复制链接失败: ' + e.message)
+    ElMessage.error('Failed to copy link: ' + e.message)
   }
 }
 
 async function handleDelete(key: string) {
   try {
-    await ElMessageBox.confirm(`确定要删除 "${key}" 吗？`, '确认删除', { type: 'warning' })
+    await ElMessageBox.confirm(
+      `Are you sure you want to delete "${key}"?`,
+      'Delete File',
+      { type: 'warning', confirmButtonText: 'Delete', confirmButtonClass: 'el-button--danger' }
+    )
     await deleteObject(bucketName.value, key)
-    ElMessage.success('删除成功')
+    ElMessage.success('Deleted successfully')
     await loadObjects()
   } catch (e: any) {
     if (e !== 'cancel') {
-      ElMessage.error('删除失败: ' + e.message)
+      ElMessage.error('Failed to delete: ' + e.message)
     }
   }
 }
 
-// 重命名/移动文件
 function handleRename(key: string) {
   renameOldKey.value = key
   renameNewKey.value = key
@@ -341,47 +383,43 @@ async function confirmRename() {
   const newKey = renameNewKey.value.trim()
 
   if (!newKey) {
-    ElMessage.warning('请输入新路径')
+    ElMessage.warning('Please enter a new path')
     return
   }
 
   if (oldKey === newKey) {
-    ElMessage.info('路径未改变')
+    ElMessage.info('Path unchanged')
     renameDialogVisible.value = false
     return
   }
 
-  // 检查目标路径是否已存在（在已加载的列表中）
   const existingObject = objects.value.find(obj => obj.Key === newKey)
   if (existingObject) {
     try {
       await ElMessageBox.confirm(
-        `文件 "${newKey}" 已存在，是否覆盖？`,
-        '名称冲突',
-        { confirmButtonText: '覆盖', cancelButtonText: '取消', type: 'warning' }
+        `File "${newKey}" already exists. Overwrite?`,
+        'Name Conflict',
+        { confirmButtonText: 'Overwrite', cancelButtonText: 'Cancel', type: 'warning' }
       )
     } catch {
-      return // 用户取消
+      return
     }
   }
 
   renaming.value = true
   try {
-    // 复制到新路径
     await copyObject(bucketName.value, oldKey, bucketName.value, newKey)
-    // 删除旧文件
     await deleteObject(bucketName.value, oldKey)
-    ElMessage.success('重命名成功')
+    ElMessage.success('Renamed successfully')
     renameDialogVisible.value = false
     await loadObjects()
   } catch (e: any) {
-    ElMessage.error('重命名失败: ' + e.message)
+    ElMessage.error('Failed to rename: ' + e.message)
   } finally {
     renaming.value = false
   }
 }
 
-// 收集待上传文件，显示设置对话框
 function handleUpload(file: File) {
   pendingFilesWithPath.value.push({
     file: file,
@@ -391,7 +429,6 @@ function handleUpload(file: File) {
   return false
 }
 
-// 从待上传列表移除文件
 function removePendingFile(index: number) {
   pendingFilesWithPath.value.splice(index, 1)
   if (pendingFilesWithPath.value.length === 0) {
@@ -399,20 +436,17 @@ function removePendingFile(index: number) {
   }
 }
 
-// 取消上传
 function cancelUpload() {
   pendingFilesWithPath.value = []
   uploadSettingVisible.value = false
 }
 
-// 开始上传
 async function startUpload() {
   if (pendingFilesWithPath.value.length === 0) return
 
-  // 验证路径
   for (const item of pendingFilesWithPath.value) {
     if (!item.targetPath.trim()) {
-      ElMessage.warning('请为所有文件指定目标路径')
+      ElMessage.warning('Please specify target path for all files')
       return
     }
   }
@@ -437,7 +471,7 @@ async function startUpload() {
       uploadFiles.value[i].status = 'success'
     } catch (e: any) {
       uploadFiles.value[i].status = 'exception'
-      ElMessage.error(`${targetPath} 上传失败: ` + e.message)
+      ElMessage.error(`${targetPath} upload failed: ` + e.message)
     }
   }
 
@@ -447,7 +481,7 @@ async function startUpload() {
   const successCount = uploadFiles.value.filter(f => f.status === 'success').length
 
   if (successCount > 0) {
-    ElMessage.success(`成功上传 ${successCount} 个文件`)
+    ElMessage.success(`Successfully uploaded ${successCount} file(s)`)
   }
 
   setTimeout(() => {
@@ -464,21 +498,76 @@ function formatSize(size: number): string {
 }
 
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleString('zh-CN')
+  return new Date(dateStr).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 }
 </script>
 
 <style scoped>
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.page-container {
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
-.header-actions {
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+
+.page-title {
+  flex: 1;
+}
+
+.breadcrumb {
   display: flex;
   align-items: center;
+  gap: 8px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.breadcrumb-link {
+  color: #3b82f6;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.breadcrumb-link:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.breadcrumb-separator {
+  color: #94a3b8;
+}
+
+.breadcrumb-current {
+  color: #1e293b;
+}
+
+.breadcrumb-prefix {
+  color: #64748b;
+  font-weight: 400;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: #64748b;
+  margin: 4px 0 0;
+}
+
+.page-actions {
+  display: flex;
   gap: 12px;
+  align-items: center;
 }
 
 .search-input {
@@ -489,76 +578,75 @@ function formatDate(dateStr: string): string {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   padding: 8px 12px;
-  background: #f0f9eb;
-  border-radius: 4px;
+  background: #f0fdf4;
+  border-radius: 8px;
 }
 
-.breadcrumb {
+.content-card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.data-table {
+  width: 100%;
+}
+
+.data-table :deep(.el-table__header th) {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.file-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
-.back-link {
-  color: #409EFF;
-  text-decoration: none;
-}
-
-.back-link:hover {
-  text-decoration: underline;
-}
-
-.prefix {
-  color: #909399;
-}
-
-.object-name {
+.file-icon {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  color: #64748b;
 }
 
-.pagination {
-  margin-top: 20px;
-  text-align: center;
-}
-
-.upload-item {
-  margin-bottom: 12px;
-}
-
-.upload-file-path {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 13px;
-  color: #606266;
+.file-name {
+  font-weight: 500;
+  color: #1e293b;
   word-break: break-all;
 }
 
-.form-tip {
-  font-size: 12px;
-  color: #909399;
-  margin-top: 4px;
+.size-text {
+  color: #64748b;
+  font-size: 13px;
 }
 
-/* GitHub风格上传 */
-.upload-github-style {
+.date-text {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.pagination {
+  padding: 20px;
+  text-align: center;
+  border-top: 1px solid #f1f5f9;
+}
+
+.upload-settings {
   max-height: 400px;
   overflow-y: auto;
 }
 
 .upload-tip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   margin-bottom: 16px;
-  padding: 10px 12px;
-  background: #f0f9eb;
-  color: #67c23a;
-  border-radius: 4px;
-  font-size: 13px;
 }
 
 .file-list {
@@ -572,35 +660,65 @@ function formatDate(dateStr: string): string {
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  background: #f5f7fa;
-  border-radius: 6px;
-  position: relative;
-}
-
-.file-item .el-button {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+  background: #f8fafc;
+  border-radius: 8px;
 }
 
 .file-info {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 13px;
-  color: #606266;
+  color: #475569;
 }
 
 .file-original-name {
   font-weight: 500;
+  flex: 1;
 }
 
 .file-size {
-  color: #909399;
+  color: #94a3b8;
   font-size: 12px;
+}
+
+.remove-btn {
+  margin-left: auto;
 }
 
 .file-path-input {
   width: 100%;
+}
+
+.upload-item {
+  margin-bottom: 16px;
+}
+
+.upload-file-path {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: #475569;
+  word-break: break-all;
+}
+
+.form-hint {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 6px;
+}
+
+:deep(.el-dialog__header) {
+  padding: 20px 24px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+:deep(.el-dialog__body) {
+  padding: 24px;
+}
+
+:deep(.el-dialog__footer) {
+  padding: 16px 24px;
+  border-top: 1px solid #f1f5f9;
 }
 </style>
