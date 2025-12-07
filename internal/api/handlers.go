@@ -8,6 +8,7 @@ import (
 
 	"sss/internal/admin"
 	"sss/internal/auth"
+	"sss/internal/config"
 	"sss/internal/storage"
 	"sss/internal/utils"
 )
@@ -54,8 +55,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Server", "SSS")
 	w.Header().Set("x-amz-request-id", utils.GenerateRequestID())
 
-	// CORS 支持
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	// CORS 支持（使用可配置的来源）
+	corsOrigin := "*"
+	if cfg := config.Global; cfg != nil && cfg.Security.CORSOrigin != "" {
+		corsOrigin = cfg.Security.CORSOrigin
+	}
+	w.Header().Set("Access-Control-Allow-Origin", corsOrigin)
 	w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, HEAD, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "*")
 	w.Header().Set("Access-Control-Expose-Headers", "ETag, x-amz-request-id, x-amz-id-2")

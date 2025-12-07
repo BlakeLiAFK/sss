@@ -2,99 +2,115 @@
   <div class="page-container">
     <div class="page-header">
       <div class="page-title">
-        <h1>Buckets</h1>
-        <p class="page-subtitle">Manage your storage buckets</p>
+        <h1>存储桶</h1>
+        <p class="page-subtitle">管理存储桶</p>
       </div>
       <div class="page-actions">
-        <el-button @click="handleRefresh" :loading="loading">
+        <el-button @click="handleRefresh" :loading="loading" class="action-btn">
           <el-icon><Refresh /></el-icon>
-          Refresh
+          <span class="btn-text">刷新</span>
         </el-button>
-        <el-button type="primary" @click="showCreateDialog = true">
+        <el-button type="primary" @click="showCreateDialog = true" class="primary-btn">
           <el-icon><Plus /></el-icon>
-          Create Bucket
+          <span class="btn-text">新建</span>
         </el-button>
       </div>
     </div>
 
-    <div class="content-card">
-      <el-table
-        :data="buckets"
-        v-loading="loading"
-        class="data-table"
-        :header-cell-style="{ background: '#f8fafc', color: '#475569', fontWeight: 600 }"
-      >
-        <el-table-column prop="name" label="Bucket Name" min-width="200">
-          <template #default="{ row }">
-            <router-link :to="{ name: 'Objects', params: { name: row.name } }" class="bucket-link">
-              <div class="bucket-icon">
-                <el-icon><Folder /></el-icon>
-              </div>
-              <span class="bucket-name">{{ row.name }}</span>
-            </router-link>
-          </template>
-        </el-table-column>
-        <el-table-column prop="creation_date" label="Created" width="180">
-          <template #default="{ row }">
-            <span class="date-text">{{ formatDate(row.creation_date) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="Access" width="140" align="center">
-          <template #default="{ row }">
-            <el-tag
-              :type="row.is_public ? 'success' : 'info'"
-              size="small"
-              class="access-tag"
-              @click="handleTogglePublic(row.name, !row.is_public)"
-              :loading="row.toggling"
-            >
-              {{ row.is_public ? 'Public' : 'Private' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="Actions" width="100" align="center">
-          <template #default="{ row }">
-            <el-button
-              type="danger"
-              text
-              size="small"
-              @click="handleDelete(row.name)"
-            >
-              <el-icon><Delete /></el-icon>
-              Delete
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+    <!-- 移动端卡片视图 -->
+    <div class="mobile-cards" v-if="buckets.length > 0">
+      <div v-for="bucket in buckets" :key="bucket.name" class="bucket-card" @click="goToBucket(bucket.name)">
+        <div class="bucket-card-header">
+          <div class="bucket-icon">
+            <el-icon><Folder /></el-icon>
+          </div>
+          <div class="bucket-info">
+            <div class="bucket-name">{{ bucket.name }}</div>
+            <div class="bucket-date">{{ formatDate(bucket.creation_date) }}</div>
+          </div>
+          <el-tag :type="bucket.is_public ? 'warning' : 'info'" size="small">
+            {{ bucket.is_public ? '公开' : '私有' }}
+          </el-tag>
+        </div>
+        <div class="bucket-card-actions">
+          <el-button size="small" @click.stop="handleTogglePublic(bucket.name, !bucket.is_public)">
+            {{ bucket.is_public ? '设为私有' : '设为公开' }}
+          </el-button>
+          <el-button size="small" type="danger" @click.stop="handleDelete(bucket.name)">
+            删除
+          </el-button>
+        </div>
+      </div>
+    </div>
 
-      <el-empty v-if="!loading && buckets.length === 0" description="No buckets yet">
+    <!-- 桌面端表格视图 -->
+    <div class="content-card desktop-table">
+      <div class="table-wrapper">
+        <el-table :data="buckets" v-loading="loading" class="data-table">
+          <el-table-column prop="name" label="存储桶名称" min-width="180">
+            <template #default="{ row }">
+              <router-link :to="{ name: 'Objects', params: { name: row.name } }" class="bucket-link">
+                <div class="bucket-icon-sm">
+                  <el-icon><Folder /></el-icon>
+                </div>
+                <span class="bucket-name">{{ row.name }}</span>
+              </router-link>
+            </template>
+          </el-table-column>
+          <el-table-column prop="creation_date" label="创建时间" width="160">
+            <template #default="{ row }">
+              <span class="date-text">{{ formatDate(row.creation_date) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="访问" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag
+                :type="row.is_public ? 'warning' : 'info'"
+                size="small"
+                class="access-tag"
+                @click="handleTogglePublic(row.name, !row.is_public)"
+              >
+                {{ row.is_public ? '公开' : '私有' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="100" align="center">
+            <template #default="{ row }">
+              <el-button type="danger" text size="small" @click="handleDelete(row.name)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <el-empty v-if="!loading && buckets.length === 0" description="暂无存储桶">
         <el-button type="primary" @click="showCreateDialog = true">
-          Create your first bucket
+          创建第一个存储桶
         </el-button>
       </el-empty>
     </div>
 
     <el-dialog
       v-model="showCreateDialog"
-      title="Create Bucket"
-      width="420px"
+      title="创建存储桶"
+      :width="dialogWidth"
       :close-on-click-modal="false"
     >
       <el-form :model="createForm" label-position="top">
-        <el-form-item label="Bucket Name">
+        <el-form-item label="存储桶名称">
           <el-input
             v-model="createForm.name"
-            placeholder="Enter bucket name (lowercase, no spaces)"
-            size="large"
+            placeholder="请输入存储桶名称（小写字母、数字、连字符）"
             @keyup.enter="handleCreate"
           />
-          <div class="form-hint">Use lowercase letters, numbers, and hyphens only</div>
+          <div class="form-hint">仅支持小写字母、数字和连字符</div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateDialog = false">Cancel</el-button>
-        <el-button type="primary" @click="handleCreate" :loading="creating">
-          Create Bucket
+        <el-button @click="showCreateDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleCreate" :loading="creating" class="primary-btn">
+          创建
         </el-button>
       </template>
     </el-dialog>
@@ -102,7 +118,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Plus, Folder, Delete } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
@@ -115,6 +132,7 @@ interface Bucket {
   toggling?: boolean
 }
 
+const router = useRouter()
 const auth = useAuthStore()
 const buckets = ref<Bucket[]>([])
 const loading = ref(false)
@@ -122,8 +140,15 @@ const showCreateDialog = ref(false)
 const creating = ref(false)
 const createForm = reactive({ name: '' })
 
+// 响应式对话框宽度
+const dialogWidth = computed(() => window.innerWidth < 500 ? '90%' : '420px')
+
 function getHeaders() {
   return auth.getAdminHeaders()
+}
+
+function goToBucket(name: string) {
+  router.push({ name: 'Objects', params: { name } })
 }
 
 onMounted(() => loadBuckets())
@@ -231,111 +256,175 @@ function formatDate(dateStr: string): string {
 
 <style scoped>
 .page-container {
-  max-width: 1200px;
-  margin: 0 auto;
+  max-width: 1000px;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24px;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .page-title h1 {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 600;
-  color: #1e293b;
+  color: #333;
   margin: 0;
 }
 
 .page-subtitle {
-  font-size: 14px;
-  color: #64748b;
+  font-size: 13px;
+  color: #888;
   margin: 4px 0 0;
 }
 
 .page-actions {
   display: flex;
+  gap: 10px;
+}
+
+.primary-btn {
+  background: #e67e22;
+  border-color: #e67e22;
+}
+
+.primary-btn:hover {
+  background: #d35400;
+  border-color: #d35400;
+}
+
+/* 移动端卡片视图 */
+.mobile-cards {
+  display: none;
+}
+
+.bucket-card {
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.bucket-card-header {
+  display: flex;
+  align-items: center;
   gap: 12px;
 }
 
-.content-card {
-  background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+.bucket-icon {
+  width: 40px;
+  height: 40px;
+  background: #fff5f0;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #e67e22;
+  flex-shrink: 0;
+}
+
+.bucket-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.bucket-name {
+  font-weight: 600;
+  color: #333;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bucket-date {
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.bucket-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+}
+
+/* 桌面端表格视图 */
+.content-card {
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #eee;
+  overflow: hidden;
+}
+
+.table-wrapper {
+  overflow-x: auto;
 }
 
 .data-table {
   width: 100%;
 }
 
-.data-table :deep(.el-table__header th) {
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
 .bucket-link {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  color: #1e293b;
+  gap: 10px;
+  color: #333;
   text-decoration: none;
-  transition: color 0.2s;
 }
 
 .bucket-link:hover {
-  color: #3b82f6;
+  color: #e67e22;
 }
 
-.bucket-icon {
+.bucket-icon-sm {
+  width: 32px;
+  height: 32px;
+  background: #fff5f0;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  background: #eff6ff;
-  border-radius: 8px;
-  color: #3b82f6;
-}
-
-.bucket-name {
-  font-weight: 500;
+  color: #e67e22;
 }
 
 .date-text {
-  color: #64748b;
+  color: #888;
   font-size: 13px;
 }
 
 .access-tag {
   cursor: pointer;
-  transition: transform 0.2s;
-}
-
-.access-tag:hover {
-  transform: scale(1.05);
 }
 
 .form-hint {
   font-size: 12px;
-  color: #94a3b8;
+  color: #999;
   margin-top: 6px;
 }
 
-:deep(.el-dialog__header) {
-  padding: 20px 24px;
-  border-bottom: 1px solid #f1f5f9;
-}
+/* 移动端响应式 */
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 
-:deep(.el-dialog__body) {
-  padding: 24px;
-}
+  .btn-text {
+    display: none;
+  }
 
-:deep(.el-dialog__footer) {
-  padding: 16px 24px;
-  border-top: 1px solid #f1f5f9;
+  .mobile-cards {
+    display: block;
+  }
+
+  .desktop-table {
+    display: none;
+  }
 }
 </style>

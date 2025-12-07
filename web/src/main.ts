@@ -5,6 +5,7 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import 'element-plus/dist/index.css'
 import App from './App.vue'
 import router from './router'
+import { setupAxiosInterceptor } from './api/interceptor'
 
 const app = createApp(App)
 
@@ -13,7 +14,12 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }
 
-app.use(createPinia())
+const pinia = createPinia()
+app.use(pinia)
 app.use(router)
 app.use(ElementPlus)
+
+// 配置 axios 拦截器（需在 Pinia 初始化后）
+setupAxiosInterceptor()
+
 app.mount('#app')

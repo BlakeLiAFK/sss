@@ -94,18 +94,22 @@ func (s *Server) handleGetObject(w http.ResponseWriter, r *http.Request, bucket,
 	w.Header().Set("Last-Modified", obj.LastModified.UTC().Format(http.TimeFormat))
 	w.Header().Set("Accept-Ranges", "bytes")
 
-	if rangeHeader != "" && start > 0 {
+	if rangeHeader != "" {
+		// Range 请求：返回 206 Partial Content
 		w.Header().Set("Content-Range", "bytes "+strconv.FormatInt(start, 10)+"-"+strconv.FormatInt(end, 10)+"/"+strconv.FormatInt(obj.Size, 10))
 		w.WriteHeader(http.StatusPartialContent)
-		if _, err := file.Seek(start, 0); err != nil {
-			utils.Error("seek file failed", "error", err)
-			return
+		if start > 0 {
+			if _, err := file.Seek(start, 0); err != nil {
+				utils.Error("seek file failed", "error", err)
+				return
+			}
 		}
 		if _, err := io.CopyN(w, file, end-start+1); err != nil {
 			// 客户端可能已断开连接，只记录日志
 			utils.Debug("copy to response failed", "error", err)
 		}
 	} else {
+		// 普通请求：返回 200 OK
 		w.WriteHeader(http.StatusOK)
 		if _, err := io.Copy(w, file); err != nil {
 			// 客户端可能已断开连接，只记录日志

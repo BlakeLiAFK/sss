@@ -175,8 +175,20 @@ func (f *FileStore) PutObject(bucket, key string, reader io.Reader, size int64) 
 
 // GetObject 获取对象
 func (f *FileStore) GetObject(storagePath string) (*os.File, error) {
-	// 验证路径在basePath内
+	// 处理相对路径：如果不是以 basePath 开头，尝试将其转换为绝对路径
 	cleanPath := filepath.Clean(storagePath)
+
+	// 如果是相对路径，转换为绝对路径
+	if !filepath.IsAbs(cleanPath) {
+		// 获取当前工作目录
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+		cleanPath = filepath.Join(cwd, cleanPath)
+	}
+
+	// 验证路径在basePath内
 	if !strings.HasPrefix(cleanPath, f.basePath) {
 		return nil, ErrInvalidPath
 	}
@@ -185,8 +197,19 @@ func (f *FileStore) GetObject(storagePath string) (*os.File, error) {
 
 // DeleteObject 删除对象
 func (f *FileStore) DeleteObject(storagePath string) error {
-	// 验证路径在basePath内
+	// 处理相对路径：如果不是以 basePath 开头，尝试将其转换为绝对路径
 	cleanPath := filepath.Clean(storagePath)
+
+	// 如果是相对路径，转换为绝对路径
+	if !filepath.IsAbs(cleanPath) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		cleanPath = filepath.Join(cwd, cleanPath)
+	}
+
+	// 验证路径在basePath内
 	if !strings.HasPrefix(cleanPath, f.basePath) {
 		return ErrInvalidPath
 	}
@@ -195,8 +218,19 @@ func (f *FileStore) DeleteObject(storagePath string) error {
 
 // CopyObject 复制对象到新位置
 func (f *FileStore) CopyObject(srcStoragePath, destBucket, destKey string) (string, string, error) {
-	// 验证源路径在basePath内
+	// 处理相对路径：如果不是以 basePath 开头，尝试将其转换为绝对路径
 	cleanSrcPath := filepath.Clean(srcStoragePath)
+
+	// 如果是相对路径，转换为绝对路径
+	if !filepath.IsAbs(cleanSrcPath) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", "", err
+		}
+		cleanSrcPath = filepath.Join(cwd, cleanSrcPath)
+	}
+
+	// 验证源路径在basePath内
 	if !strings.HasPrefix(cleanSrcPath, f.basePath) {
 		return "", "", ErrInvalidPath
 	}

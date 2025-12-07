@@ -23,10 +23,10 @@ func NewMetadataStore(dbPath string) (*MetadataStore, error) {
 	}
 
 	// 设置连接池参数
-	db.SetMaxOpenConns(25)        // 最大打开连接数
-	db.SetMaxIdleConns(5)         // 最大空闲连接数
-	db.SetConnMaxLifetime(0)      // 连接不过期
-	db.SetConnMaxIdleTime(0)      // 空闲连接不过期
+	db.SetMaxOpenConns(25)   // 最大打开连接数
+	db.SetMaxIdleConns(5)    // 最大空闲连接数
+	db.SetConnMaxLifetime(0) // 连接不过期
+	db.SetConnMaxIdleTime(0) // 空闲连接不过期
 
 	// 验证连接
 	if err := db.Ping(); err != nil {
@@ -99,6 +99,12 @@ func (m *MetadataStore) initTables() error {
 			FOREIGN KEY (access_key_id) REFERENCES api_keys(access_key_id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_api_key_permissions ON api_key_permissions(access_key_id)`,
+		// 系统配置表
+		`CREATE TABLE IF NOT EXISTS system_settings (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
 	}
 
 	for _, schema := range schemas {
@@ -123,6 +129,11 @@ func (m *MetadataStore) initTables() error {
 		if _, err := m.db.Exec("ALTER TABLE buckets ADD COLUMN is_public INTEGER DEFAULT 0"); err != nil {
 			return fmt.Errorf("add is_public column failed: %v", err)
 		}
+	}
+
+	// 初始化审计日志表
+	if err := m.initAuditTable(); err != nil {
+		return fmt.Errorf("init audit table failed: %v", err)
 	}
 
 	return nil

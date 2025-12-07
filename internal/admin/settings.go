@@ -13,9 +13,16 @@ import (
 
 // SettingsResponse 系统设置响应
 type SettingsResponse struct {
-	Runtime RuntimeSettings `json:"runtime"` // 运行时参数（只读）
-	Storage StorageSettings `json:"storage"` // 存储设置（可修改）
-	System  SystemInfo      `json:"system"`  // 系统信息（只读）
+	Runtime  RuntimeSettings  `json:"runtime"`  // 运行时参数（只读）
+	Storage  StorageSettings  `json:"storage"`  // 存储设置（可修改）
+	Security SecuritySettings `json:"security"` // 安全设置（可修改）
+	System   SystemInfo       `json:"system"`   // 系统信息（只读）
+}
+
+// SecuritySettings 安全设置（可在线修改）
+type SecuritySettings struct {
+	CORSOrigin    string `json:"cors_origin"`    // CORS 允许的来源，默认 "*"
+	PresignScheme string `json:"presign_scheme"` // 预签名URL协议，"http" 或 "https"
 }
 
 // RuntimeSettings 运行时参数（启动时确定，不可在线修改）
@@ -69,13 +76,27 @@ func (h *Handler) getSettings(w http.ResponseWriter, r *http.Request) {
 		MaxUploadSize: config.Global.Storage.MaxUploadSize,
 	}
 
+	// 安全设置（可在线修改）
+	security := SecuritySettings{
+		CORSOrigin:    config.Global.Security.CORSOrigin,
+		PresignScheme: config.Global.Security.PresignScheme,
+	}
+	// 确保有默认值
+	if security.CORSOrigin == "" {
+		security.CORSOrigin = "*"
+	}
+	if security.PresignScheme == "" {
+		security.PresignScheme = "http"
+	}
+
 	// 系统信息
 	installedAt, _ := h.metadata.GetSetting(storage.SettingSystemInstalledAt)
 	version, _ := h.metadata.GetSetting(storage.SettingSystemVersion)
 
 	resp := SettingsResponse{
-		Runtime: runtime,
-		Storage: storage_,
+		Runtime:  runtime,
+		Storage:  storage_,
+		Security: security,
 		System: SystemInfo{
 			Installed:   h.metadata.IsInstalled(),
 			InstalledAt: installedAt,
@@ -91,6 +112,8 @@ type UpdateSettingsRequest struct {
 	Region        *string `json:"region,omitempty"`
 	MaxObjectSize *int64  `json:"max_object_size,omitempty"`
 	MaxUploadSize *int64  `json:"max_upload_size,omitempty"`
+	CORSOrigin    *string `json:"cors_origin,omitempty"`
+	PresignScheme *string `json:"presign_scheme,omitempty"`
 }
 
 // updateSettings 更新系统设置
@@ -128,6 +151,35 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 		config.Global.Storage.MaxUploadSize = *req.MaxUploadSize
 	}
 
+	// 更新 CORS 来源
+	if req.CORSOrigin != nil {
+		// 允许设置为空（将使用默认值 "*"），或设置为具体值
+		corsOrigin := *req.CORSOrigin
+		if corsOrigin == "" {
+			corsOrigin = "*"
+		}
+		if err := h.metadata.SetSetting(storage.SettingSecurityCORSOrigin, corsOrigin); err != nil {
+			utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
+			return
+		}
+		config.Global.Security.CORSOrigin = corsOrigin
+	}
+
+	// 更新预签名URL协议
+	if req.PresignScheme != nil && *req.PresignScheme != "" {
+		scheme := *req.PresignScheme
+		// 验证协议值
+		if scheme != "http" && scheme != "https" {
+			utils.WriteErrorResponse(w, "InvalidParameter", "presign_scheme 必须是 'http' 或 'https'", http.StatusBadRequest)
+			return
+		}
+		if err := h.metadata.SetSetting(storage.SettingSecurityPresignScheme, scheme); err != nil {
+			utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
+			return
+		}
+		config.Global.Security.PresignScheme = scheme
+	}
+
 	// 记录审计日志
 	h.Audit(r, storage.AuditActionSettingsUpdate, "admin", "system", true, "更新系统设置")
 
@@ -159,9 +211,9 @@ func (h *Handler) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 验证新密码长度
-	if len(req.NewPassword) < 6 {
-		utils.WriteErrorResponse(w, "InvalidRequest", "新密码至少6个字符", http.StatusBadRequest)
+	// 使用统一的密码复杂度验证
+	if err := storage.ValidatePassword(req.NewPassword); err != nil {
+		utils.WriteErrorResponse(w, "InvalidRequest", err.Error(), http.StatusBadRequest)
 		return
 	}
 

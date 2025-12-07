@@ -1,106 +1,158 @@
 <template>
-  <el-container class="layout-container">
-    <el-header class="header">
-      <div class="header-left">
+  <div class="layout-container">
+    <!-- 移动端遮罩 -->
+    <div 
+      v-if="sidebarOpen" 
+      class="sidebar-overlay"
+      @click="sidebarOpen = false"
+    ></div>
+
+    <!-- 侧边栏 -->
+    <aside class="sidebar" :class="{ open: sidebarOpen }">
+      <div class="sidebar-header">
         <div class="logo">
           <div class="logo-icon">
-            <el-icon :size="22"><Box /></el-icon>
+            <el-icon :size="20"><Box /></el-icon>
           </div>
           <span class="logo-text">SSS</span>
         </div>
-        <nav class="nav-menu">
-          <router-link
-            v-for="item in menuItems"
-            :key="item.name"
-            :to="{ name: item.name }"
-            class="nav-item"
-            :class="{ active: route.name === item.name }"
-          >
-            <el-icon><component :is="item.icon" /></el-icon>
-            <span>{{ item.label }}</span>
-          </router-link>
-        </nav>
+        <button class="close-btn" @click="sidebarOpen = false">
+          <el-icon><Close /></el-icon>
+        </button>
       </div>
-      <div class="header-right">
-        <el-dropdown @command="handleCommand" trigger="click">
-          <div class="user-avatar">
-            <el-icon :size="18"><User /></el-icon>
-          </div>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item disabled>
-                <el-icon><User /></el-icon>
-                Admin
-              </el-dropdown-item>
-              <el-dropdown-item divided command="logout">
-                <el-icon><SwitchButton /></el-icon>
-                Logout
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+
+      <nav class="sidebar-nav">
+        <router-link
+          v-for="item in menuItems"
+          :key="item.name"
+          :to="{ name: item.name }"
+          class="nav-item"
+          :class="{ active: isActive(item.name) }"
+          @click="sidebarOpen = false"
+        >
+          <el-icon :size="18"><component :is="item.icon" /></el-icon>
+          <span>{{ item.label }}</span>
+        </router-link>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <el-icon :size="16"><User /></el-icon>
+          <span>Admin</span>
+        </div>
+        <button class="logout-btn" @click="handleLogout">
+          <el-icon :size="16"><SwitchButton /></el-icon>
+          <span>退出</span>
+        </button>
       </div>
-    </el-header>
-    <el-main class="main">
-      <router-view />
-    </el-main>
-  </el-container>
+    </aside>
+
+    <!-- 主内容区 -->
+    <div class="main-container">
+      <!-- 移动端顶栏 -->
+      <header class="mobile-header">
+        <button class="menu-btn" @click="sidebarOpen = true">
+          <el-icon :size="22"><Menu /></el-icon>
+        </button>
+        <span class="page-title">{{ currentPageTitle }}</span>
+        <div class="header-spacer"></div>
+      </header>
+
+      <!-- 内容区 -->
+      <main class="main-content">
+        <router-view />
+      </main>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { Folder, Key, Tools, User, SwitchButton } from '@element-plus/icons-vue'
+import { 
+  Folder, Key, Tools, User, SwitchButton, DataAnalysis, List, 
+  Menu, Close, Box, Setting 
+} from '@element-plus/icons-vue'
 import axios from 'axios'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const sidebarOpen = ref(false)
 
 const menuItems = [
-  { name: 'Buckets', label: 'Buckets', icon: Folder },
-  { name: 'ApiKeys', label: 'API Keys', icon: Key },
-  { name: 'Tools', label: 'Tools', icon: Tools }
+  { name: 'Dashboard', label: '仪表盘', icon: DataAnalysis },
+  { name: 'Buckets', label: '存储桶', icon: Folder },
+  { name: 'ApiKeys', label: 'API 密钥', icon: Key },
+  { name: 'Tools', label: '工具箱', icon: Tools },
+  { name: 'AuditLogs', label: '审计日志', icon: List },
+  { name: 'Settings', label: '系统设置', icon: Setting }
 ]
 
-async function handleCommand(cmd: string) {
-  if (cmd === 'logout') {
-    try {
-      await axios.post(`${auth.endpoint}/api/admin/logout`, {}, {
-        headers: auth.getAdminHeaders()
-      })
-    } catch {
-      // Ignore logout errors
-    }
-    auth.logout()
-    router.push('/login')
+const currentPageTitle = computed(() => {
+  const item = menuItems.find(m => isActive(m.name))
+  return item?.label || 'SSS'
+})
+
+function isActive(name: string): boolean {
+  if (name === 'Buckets') {
+    return route.name === 'Buckets' || route.name === 'Objects'
   }
+  return route.name === name
+}
+
+async function handleLogout() {
+  try {
+    await axios.post(`${auth.endpoint}/api/admin/logout`, {}, {
+      headers: auth.getAdminHeaders()
+    })
+  } catch {
+    // Ignore logout errors
+  }
+  auth.logout()
+  router.push('/login')
 }
 </script>
 
 <style scoped>
+/* 布局容器 */
 .layout-container {
+  display: flex;
   min-height: 100vh;
-  background: #f1f5f9;
+  background: #f8f9fa;
 }
 
-.header {
+/* 侧边栏遮罩 */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 998;
+}
+
+/* 侧边栏 */
+.sidebar {
+  width: 220px;
+  background: #ffffff;
+  border-right: 1px solid #eee;
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 999;
+  transition: transform 0.3s ease;
+}
+
+.sidebar-header {
+  padding: 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #ffffff;
-  padding: 0 24px;
-  height: 60px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 48px;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .logo {
@@ -110,35 +162,52 @@ async function handleCommand(cmd: string) {
 }
 
 .logo-icon {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-  border-radius: 8px;
-  color: #ffffff;
+  color: #fff;
 }
 
 .logo-text {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
-  color: #1e293b;
+  color: #333;
   letter-spacing: 1px;
 }
 
-.nav-menu {
-  display: flex;
-  gap: 4px;
+.close-btn {
+  display: none;
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  color: #666;
+  border-radius: 6px;
+}
+
+.close-btn:hover {
+  background: #f5f5f5;
+}
+
+/* 导航菜单 */
+.sidebar-nav {
+  flex: 1;
+  padding: 12px;
+  overflow-y: auto;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border-radius: 6px;
-  color: #64748b;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  color: #555;
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
@@ -146,40 +215,146 @@ async function handleCommand(cmd: string) {
 }
 
 .nav-item:hover {
-  color: #3b82f6;
-  background: #f1f5f9;
+  background: #fff5f0;
+  color: #e67e22;
 }
 
 .nav-item.active {
-  color: #3b82f6;
-  background: #eff6ff;
+  background: #e67e22;
+  color: #ffffff;
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
+/* 侧边栏底部 */
+.sidebar-footer {
+  padding: 16px;
+  border-top: 1px solid #f0f0f0;
 }
 
-.user-avatar {
+.user-info {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  background: #f1f5f9;
-  border-radius: 50%;
-  color: #64748b;
+  gap: 8px;
+  padding: 8px 12px;
+  color: #666;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: #f8f9fa;
+  border: none;
+  border-radius: 6px;
+  color: #666;
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.user-avatar:hover {
-  background: #e2e8f0;
-  color: #475569;
+.logout-btn:hover {
+  background: #fee2e2;
+  color: #dc2626;
 }
 
-.main {
+/* 主内容区 */
+.main-container {
+  flex: 1;
+  margin-left: 220px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* 移动端顶栏 */
+.mobile-header {
+  display: none;
+  align-items: center;
+  padding: 12px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #eee;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.menu-btn {
+  background: none;
+  border: none;
+  padding: 8px;
+  cursor: pointer;
+  color: #333;
+  border-radius: 6px;
+}
+
+.menu-btn:hover {
+  background: #f5f5f5;
+}
+
+.page-title {
+  flex: 1;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.header-spacer {
+  width: 38px;
+}
+
+/* 内容区域 */
+.main-content {
+  flex: 1;
   padding: 24px;
-  background: #f1f5f9;
+}
+
+/* 移动端响应式 */
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay {
+    display: block;
+  }
+
+  .close-btn {
+    display: block;
+  }
+
+  .main-container {
+    margin-left: 0;
+  }
+
+  .mobile-header {
+    display: flex;
+  }
+
+  .main-content {
+    padding: 16px;
+  }
+}
+
+/* 平板响应式 */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .sidebar {
+    width: 200px;
+  }
+
+  .main-container {
+    margin-left: 200px;
+  }
+
+  .main-content {
+    padding: 20px;
+  }
 }
 </style>

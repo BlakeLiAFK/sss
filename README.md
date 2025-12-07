@@ -34,47 +34,63 @@ sss-windows-amd64.exe
 
 The server starts at `http://localhost:8080`.
 
-### Default Credentials
+### First Run
 
-| Type | Username | Password |
-|------|----------|----------|
-| Web Admin | admin | admin |
+On first access, you'll be guided through a setup wizard to configure:
 
-> **Important**: Change the default admin password in `config.yaml` before production use.
+- Admin username and password
+- S3 region
 
 ## Configuration
 
-Create a `config.yaml` file in the same directory as the binary:
+### Command Line Arguments
 
-```yaml
-server:
-  host: "0.0.0.0"
-  port: 8080
-  region: "us-east-1"
+All runtime configurations are set via command line arguments:
 
-storage:
-  data_path: "./data/buckets"
-  db_path: "./data/metadata.db"
-  max_object_size: 5368709120   # 5GB
-  max_upload_size: 1073741824   # 1GB per request
+```bash
+./sss [options]
 
-auth:
-  admin_username: "admin"
-  admin_password: "your-secure-password"
-
-log:
-  level: "info"  # debug, info, warn, error
+Options:
+  -host string    Listen address (default "0.0.0.0")
+  -port int       Listen port (default 8080)
+  -db string      Database path (default "./data/metadata.db")
+  -data string    Data storage path (default "./data/buckets")
+  -log string     Log level: debug/info/warn/error (default "info")
 ```
+
+**Examples:**
+
+```bash
+# Custom port
+./sss -port 9000
+
+# Custom data directory
+./sss -data /mnt/storage/buckets -db /mnt/storage/metadata.db
+
+# Debug logging
+./sss -log debug
+```
+
+### Web Settings (Runtime Configurable)
+
+The following settings can be modified via Web UI → Settings:
+
+| Setting         | Description                | Default            |
+| --------------- | -------------------------- | ------------------ |
+| S3 Region       | AWS region identifier      | us-east-1          |
+| Max Object Size | Maximum single object size | 5 GB               |
+| Max Upload Size | Presigned URL upload limit | 1 GB               |
+| Admin Password  | Login password             | (set during setup) |
 
 ## S3 API Reference
 
 ### Supported Operations
 
-| Category | Operations |
-|----------|------------|
-| **Bucket** | ListBuckets, CreateBucket, DeleteBucket, HeadBucket |
-| **Object** | GetObject, PutObject, DeleteObject, HeadObject, CopyObject |
-| **List** | ListObjectsV1, ListObjectsV2 |
+| Category      | Operations                                                                                    |
+| ------------- | --------------------------------------------------------------------------------------------- |
+| **Bucket**    | ListBuckets, CreateBucket, DeleteBucket, HeadBucket                                           |
+| **Object**    | GetObject, PutObject, DeleteObject, HeadObject, CopyObject                                    |
+| **List**      | ListObjectsV1, ListObjectsV2                                                                  |
 | **Multipart** | InitiateMultipartUpload, UploadPart, CompleteMultipartUpload, AbortMultipartUpload, ListParts |
 
 ### AWS CLI Configuration
@@ -118,11 +134,11 @@ Access the web UI at `http://localhost:8080` after starting the server.
 
 Each API key can have different permissions for different buckets:
 
-| Permission | Description |
-|------------|-------------|
-| Read | List objects, download files |
-| Write | Upload, delete, modify objects |
-| `*` (Wildcard) | Access to all buckets |
+| Permission     | Description                    |
+| -------------- | ------------------------------ |
+| Read           | List objects, download files   |
+| Write          | Upload, delete, modify objects |
+| `*` (Wildcard) | Access to all buckets          |
 
 ## Building from Source
 
@@ -189,33 +205,34 @@ sss/
 
 ### Admin API
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | /api/admin/login | Admin login |
-| POST | /api/admin/logout | Admin logout |
-| GET | /api/admin/apikeys | List API keys |
-| POST | /api/admin/apikeys | Create API key |
-| DELETE | /api/admin/apikeys/:id | Delete API key |
-| PUT | /api/admin/apikeys/:id | Update API key |
-| POST | /api/admin/apikeys/:id/reset-secret | Reset secret key |
-| POST | /api/admin/apikeys/:id/permissions | Set permissions |
-| GET | /api/admin/buckets | List buckets |
-| POST | /api/admin/buckets | Create bucket |
-| DELETE | /api/admin/buckets/:name | Delete bucket |
-| PUT | /api/admin/buckets/:name/public | Set public status |
+| Method | Endpoint                            | Description       |
+| ------ | ----------------------------------- | ----------------- |
+| POST   | /api/admin/login                    | Admin login       |
+| POST   | /api/admin/logout                   | Admin logout      |
+| GET    | /api/admin/apikeys                  | List API keys     |
+| POST   | /api/admin/apikeys                  | Create API key    |
+| DELETE | /api/admin/apikeys/:id              | Delete API key    |
+| PUT    | /api/admin/apikeys/:id              | Update API key    |
+| POST   | /api/admin/apikeys/:id/reset-secret | Reset secret key  |
+| POST   | /api/admin/apikeys/:id/permissions  | Set permissions   |
+| GET    | /api/admin/buckets                  | List buckets      |
+| POST   | /api/admin/buckets                  | Create bucket     |
+| DELETE | /api/admin/buckets/:name            | Delete bucket     |
+| PUT    | /api/admin/buckets/:name/public     | Set public status |
 
 ### Custom S3 Extensions
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | /api/presign | Generate presigned URL |
-| GET | /api/bucket/:name/search | Search objects |
+| Method | Endpoint                 | Description            |
+| ------ | ------------------------ | ---------------------- |
+| POST   | /api/presign             | Generate presigned URL |
+| GET    | /api/bucket/:name/search | Search objects         |
 
 ## Troubleshooting
 
 ### Common Issues
 
 **Port already in use**
+
 ```bash
 # Find process using port 8080
 lsof -i :8080
@@ -224,11 +241,13 @@ kill -9 <PID>
 ```
 
 **Permission denied on data directory**
+
 ```bash
 chmod -R 755 ./data
 ```
 
 **AWS CLI signature errors**
+
 - Verify access key and secret key
 - Check system time synchronization
 - Ensure endpoint URL is correct
@@ -244,10 +263,12 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Changelog
 
 ### v1.0.1
+
 - Added API Key reset secret functionality
 - Fixed static file routing security vulnerability (SEC-001)
 
 ### v1.0.0
+
 - Initial release
 - Full S3-compatible API
 - Web management interface

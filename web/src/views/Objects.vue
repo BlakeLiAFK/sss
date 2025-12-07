@@ -1,9 +1,26 @@
 <template>
-  <div class="page-container">
+  <div
+    class="page-container"
+    @dragover.prevent
+    @dragenter.prevent="handleDragEnter"
+    @dragleave.prevent="handleDragLeave"
+    @drop.prevent="handleDrop"
+  >
+    <!-- Drag Overlay -->
+    <Transition name="fade">
+      <div v-if="isDragging" class="drop-overlay">
+        <div class="drop-content">
+          <el-icon :size="64"><Upload /></el-icon>
+          <h3>Drop files here to upload</h3>
+          <p>Files and folders supported</p>
+        </div>
+      </div>
+    </Transition>
+
     <div class="page-header">
       <div class="page-title">
         <div class="breadcrumb">
-          <router-link to="/" class="breadcrumb-link">Buckets</router-link>
+          <router-link to="/buckets" class="breadcrumb-link">Buckets</router-link>
           <el-icon class="breadcrumb-separator"><ArrowRight /></el-icon>
           <span class="breadcrumb-current">{{ bucketName }}</span>
           <span v-if="prefix" class="breadcrumb-prefix">/ {{ prefix }}</span>
@@ -46,14 +63,39 @@
       <el-button text type="primary" size="small" @click="handleSearchClear">Clear search</el-button>
     </div>
 
+    <!-- Batch Action Toolbar -->
+    <div v-if="selectedRows.length > 0" class="batch-toolbar">
+      <div class="batch-info">
+        <el-tag type="primary" effect="light">
+          {{ selectedRows.length }} selected
+        </el-tag>
+      </div>
+      <div class="batch-actions">
+        <el-button type="primary" plain size="small" @click="handleBatchDownload" :loading="batchDownloading">
+          <el-icon><Download /></el-icon>
+          Download as ZIP
+        </el-button>
+        <el-button type="danger" plain size="small" @click="handleBatchDelete">
+          <el-icon><Delete /></el-icon>
+          Delete Selected
+        </el-button>
+        <el-button text size="small" @click="clearSelection">
+          Clear
+        </el-button>
+      </div>
+    </div>
+
     <div class="content-card">
       <el-table
+        ref="tableRef"
         :data="displayObjects"
         v-loading="loading"
         class="data-table"
         :header-cell-style="{ background: '#f8fafc', color: '#475569', fontWeight: 600 }"
         @row-dblclick="handleRowClick"
+        @selection-change="handleSelectionChange"
       >
+        <el-table-column type="selection" width="55" />
         <el-table-column prop="Key" label="Name" min-width="300">
           <template #default="{ row }">
             <div class="file-cell">
@@ -74,15 +116,18 @@
             <span class="date-text">{{ formatDate(row.LastModified) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="Actions" width="280" align="center">
+        <el-table-column label="Actions" width="320" align="center">
           <template #default="{ row }">
+            <el-button size="small" text @click="handlePreview(row)">
+              <el-icon><View /></el-icon>
+              Preview
+            </el-button>
             <el-button size="small" text @click="handleDownload(row.Key)">
               <el-icon><Download /></el-icon>
               Download
             </el-button>
             <el-button size="small" text @click="handleCopyLink(row.Key)">
               <el-icon><Link /></el-icon>
-              Copy Link
             </el-button>
             <el-button size="small" text @click="handleRename(row.Key)">
               <el-icon><Edit /></el-icon>
@@ -187,15 +232,91 @@
         <el-button type="primary" @click="confirmRename" :loading="renaming">Confirm</el-button>
       </template>
     </el-dialog>
+
+    <!-- Preview Dialog -->
+    <el-dialog
+      v-model="previewDialogVisible"
+      :title="'Preview: ' + previewKey"
+      width="80%"
+      :close-on-click-modal="true"
+      class="preview-dialog"
+      destroy-on-close
+    >
+      <div v-loading="previewLoading" class="preview-container">
+        <!-- 图片预览 -->
+        <div v-if="previewType === 'image'" class="preview-image-wrapper">
+          <img :src="previewUrl" :alt="previewKey" class="preview-image" />
+        </div>
+
+        <!-- 视频预览 -->
+        <div v-else-if="previewType === 'video'" class="preview-video-wrapper">
+          <video :src="previewUrl" controls class="preview-video">
+            Your browser does not support video playback.
+          </video>
+        </div>
+
+        <!-- 音频预览 -->
+        <div v-else-if="previewType === 'audio'" class="preview-audio-wrapper">
+          <div class="audio-icon">
+            <el-icon :size="80"><Document /></el-icon>
+          </div>
+          <div class="audio-filename">{{ previewKey }}</div>
+          <audio :src="previewUrl" controls class="preview-audio">
+            Your browser does not support audio playback.
+          </audio>
+        </div>
+
+        <!-- PDF 预览 -->
+        <div v-else-if="previewType === 'pdf'" class="preview-pdf-wrapper">
+          <iframe :src="previewUrl" class="preview-pdf"></iframe>
+        </div>
+
+        <!-- 文本预览 -->
+        <div v-else-if="previewType === 'text'" class="preview-text-wrapper">
+          <pre class="preview-text">{{ previewContent }}</pre>
+        </div>
+
+        <!-- 不支持的格式 -->
+        <div v-else class="preview-unsupported">
+          <el-icon :size="64" color="#94a3b8"><Document /></el-icon>
+          <h3>Preview not available</h3>
+          <p>This file type cannot be previewed.</p>
+          <p class="file-info">
+            <strong>File:</strong> {{ previewKey }}<br />
+            <strong>Size:</strong> {{ formatSize(previewSize) }}
+          </p>
+          <el-button type="primary" @click="handleDownload(previewKey)">
+            <el-icon><Download /></el-icon>
+            Download File
+          </el-button>
+        </div>
+      </div>
+      <template #footer>
+        <div class="preview-footer">
+          <span class="preview-size">{{ formatSize(previewSize) }}</span>
+          <div class="preview-actions">
+            <el-button @click="handleCopyLink(previewKey)">
+              <el-icon><Link /></el-icon>
+              Copy Link
+            </el-button>
+            <el-button type="primary" @click="handleDownload(previewKey)">
+              <el-icon><Download /></el-icon>
+              Download
+            </el-button>
+          </div>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowRight, Upload, Document, Delete, Search, Download, Link, Edit, Close } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
+import { ArrowRight, Upload, Document, Delete, Search, Download, Link, Edit, Close, View } from '@element-plus/icons-vue'
 import { listObjects, deleteObject, getObjectUrl, uploadObject, generatePresignedUrl, getBucketPublic, copyObject, searchObjects, type S3Object } from '../api/s3'
+import { batchDeleteObjects, batchDownloadObjects } from '../api/admin'
 
 const route = useRoute()
 
@@ -231,6 +352,25 @@ const renameDialogVisible = ref(false)
 const renameOldKey = ref('')
 const renameNewKey = ref('')
 const renaming = ref(false)
+
+// Batch operation related
+const tableRef = ref<TableInstance>()
+const selectedRows = ref<S3Object[]>([])
+const batchDownloading = ref(false)
+
+// Drag and drop related
+const isDragging = ref(false)
+let dragCounter = 0  // 用于处理子元素的dragenter/dragleave
+
+// Preview related
+const previewDialogVisible = ref(false)
+const previewLoading = ref(false)
+const previewUrl = ref('')
+const previewKey = ref('')
+const previewType = ref<'image' | 'video' | 'audio' | 'text' | 'pdf' | 'unsupported'>('unsupported')
+const previewContent = ref('')  // 文本内容预览
+const previewSize = ref(0)
+const MAX_TEXT_PREVIEW_SIZE = 512 * 1024  // 512KB 文本预览大小限制
 
 onMounted(() => {
   loadObjects()
@@ -490,6 +630,238 @@ async function startUpload() {
   }, hasError ? 3000 : 1500)
 }
 
+// Drag and drop handlers
+function handleDragEnter(e: DragEvent) {
+  dragCounter++
+  isDragging.value = true
+}
+
+function handleDragLeave(e: DragEvent) {
+  dragCounter--
+  if (dragCounter <= 0) {
+    dragCounter = 0
+    isDragging.value = false
+  }
+}
+
+async function handleDrop(e: DragEvent) {
+  dragCounter = 0
+  isDragging.value = false
+
+  const items = e.dataTransfer?.items
+  if (!items || items.length === 0) return
+
+  const files: PendingFileWithPath[] = []
+  const promises: Promise<void>[] = []
+
+  // 处理每个拖入的项目
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (item.kind !== 'file') continue
+
+    // 尝试获取 FileSystemEntry（支持文件夹）
+    const entry = item.webkitGetAsEntry?.()
+    if (entry) {
+      promises.push(processEntry(entry, '', files))
+    } else {
+      // 回退到普通 File 对象
+      const file = item.getAsFile()
+      if (file) {
+        files.push({ file, targetPath: file.name })
+      }
+    }
+  }
+
+  // 等待所有文件夹递归完成
+  await Promise.all(promises)
+
+  if (files.length === 0) {
+    ElMessage.warning('No files found to upload')
+    return
+  }
+
+  // 添加到待上传列表并打开设置对话框
+  pendingFilesWithPath.value = [...pendingFilesWithPath.value, ...files]
+  uploadSettingVisible.value = true
+
+  ElMessage.success(`Added ${files.length} file(s) for upload`)
+}
+
+// 递归处理 FileSystemEntry
+async function processEntry(entry: FileSystemEntry, basePath: string, files: PendingFileWithPath[]): Promise<void> {
+  if (entry.isFile) {
+    const fileEntry = entry as FileSystemFileEntry
+    return new Promise((resolve) => {
+      fileEntry.file((file) => {
+        const targetPath = basePath ? `${basePath}/${entry.name}` : entry.name
+        files.push({ file, targetPath })
+        resolve()
+      }, () => resolve()) // 忽略错误继续处理其他文件
+    })
+  } else if (entry.isDirectory) {
+    const dirEntry = entry as FileSystemDirectoryEntry
+    const dirPath = basePath ? `${basePath}/${entry.name}` : entry.name
+    const reader = dirEntry.createReader()
+
+    return new Promise((resolve) => {
+      const readAllEntries = (allEntries: FileSystemEntry[] = []) => {
+        reader.readEntries(async (entries) => {
+          if (entries.length === 0) {
+            // 没有更多条目，处理已收集的所有条目
+            const subPromises = allEntries.map(e => processEntry(e, dirPath, files))
+            await Promise.all(subPromises)
+            resolve()
+          } else {
+            // 继续读取（readEntries 可能分批返回）
+            readAllEntries([...allEntries, ...entries])
+          }
+        }, () => resolve()) // 忽略错误继续处理
+      }
+      readAllEntries()
+    })
+  }
+}
+
+// Batch operation handlers
+function handleSelectionChange(rows: S3Object[]) {
+  selectedRows.value = rows
+}
+
+async function handleBatchDelete() {
+  if (selectedRows.value.length === 0) return
+
+  try {
+    await ElMessageBox.confirm(
+      `Are you sure you want to delete ${selectedRows.value.length} file(s)?`,
+      'Batch Delete',
+      { type: 'warning', confirmButtonText: 'Delete All', confirmButtonClass: 'el-button--danger' }
+    )
+
+    const keys = selectedRows.value.map(row => row.Key)
+    const result = await batchDeleteObjects(bucketName.value, keys)
+
+    if (result.deleted_count > 0) {
+      ElMessage.success(`Deleted ${result.deleted_count} file(s)`)
+    }
+    if (result.failed_count > 0) {
+      ElMessage.warning(`Failed to delete ${result.failed_count} file(s)`)
+    }
+
+    clearSelection()
+    await loadObjects()
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error('Batch delete failed: ' + e.message)
+    }
+  }
+}
+
+async function handleBatchDownload() {
+  if (selectedRows.value.length === 0) return
+
+  batchDownloading.value = true
+  try {
+    const keys = selectedRows.value.map(row => row.Key)
+    const blob = await batchDownloadObjects(bucketName.value, keys)
+
+    // 创建下载链接
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${bucketName.value}-${Date.now()}.zip`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+
+    ElMessage.success(`Downloaded ${keys.length} file(s) as ZIP`)
+  } catch (e: any) {
+    ElMessage.error('Batch download failed: ' + e.message)
+  } finally {
+    batchDownloading.value = false
+  }
+}
+
+function clearSelection() {
+  selectedRows.value = []
+  tableRef.value?.clearSelection()
+}
+
+// Preview handlers
+function getPreviewType(key: string): 'image' | 'video' | 'audio' | 'text' | 'pdf' | 'unsupported' {
+  const ext = key.toLowerCase().split('.').pop() || ''
+
+  // 图片格式
+  const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico']
+  if (imageExts.includes(ext)) return 'image'
+
+  // 视频格式
+  const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'm4v']
+  if (videoExts.includes(ext)) return 'video'
+
+  // 音频格式
+  const audioExts = ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac']
+  if (audioExts.includes(ext)) return 'audio'
+
+  // PDF
+  if (ext === 'pdf') return 'pdf'
+
+  // 文本/代码格式
+  const textExts = ['txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'jsx', 'tsx',
+                    'vue', 'go', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'rs', 'rb', 'php',
+                    'sh', 'bash', 'yaml', 'yml', 'toml', 'ini', 'conf', 'log', 'csv', 'sql']
+  if (textExts.includes(ext)) return 'text'
+
+  return 'unsupported'
+}
+
+async function handlePreview(row: S3Object) {
+  previewKey.value = row.Key
+  previewSize.value = row.Size
+  previewType.value = getPreviewType(row.Key)
+  previewContent.value = ''
+  previewUrl.value = ''
+  previewDialogVisible.value = true
+  previewLoading.value = true
+
+  try {
+    // 获取文件 URL
+    let url: string
+    if (isPublic.value) {
+      url = getObjectUrl(bucketName.value, row.Key)
+    } else {
+      const result = await generatePresignedUrl({
+        bucket: bucketName.value,
+        key: row.Key,
+        method: 'GET',
+        expiresMinutes: 60
+      })
+      url = result.url
+    }
+    previewUrl.value = url
+
+    // 对于文本类型，需要获取内容
+    if (previewType.value === 'text') {
+      // 文件太大则不加载
+      if (row.Size > MAX_TEXT_PREVIEW_SIZE) {
+        previewContent.value = `File is too large to preview (${formatSize(row.Size)}).\nMaximum preview size: ${formatSize(MAX_TEXT_PREVIEW_SIZE)}\n\nPlease download the file to view its contents.`
+      } else {
+        const response = await fetch(url)
+        if (response.ok) {
+          previewContent.value = await response.text()
+        } else {
+          previewContent.value = 'Failed to load file content.'
+        }
+      }
+    }
+  } catch (e: any) {
+    ElMessage.error('Failed to load preview: ' + e.message)
+    previewDialogVisible.value = false
+  } finally {
+    previewLoading.value = false
+  }
+}
+
 function formatSize(size: number): string {
   if (size < 1024) return size + ' B'
   if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB'
@@ -720,5 +1092,249 @@ function formatDate(dateStr: string): string {
 :deep(.el-dialog__footer) {
   padding: 16px 24px;
   border-top: 1px solid #f1f5f9;
+}
+
+/* Batch toolbar styles */
+.batch-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, #eff6ff, #eef2ff);
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+}
+
+.batch-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Preview Dialog Styles */
+.preview-dialog :deep(.el-dialog__body) {
+  padding: 0;
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.preview-container {
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-image-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: #f8fafc;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 65vh;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+}
+
+.preview-video-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: #000;
+  width: 100%;
+}
+
+.preview-video {
+  max-width: 100%;
+  max-height: 65vh;
+}
+
+.preview-audio-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  width: 100%;
+  background: linear-gradient(135deg, #f8fafc, #e2e8f0);
+}
+
+.audio-icon {
+  color: #64748b;
+  margin-bottom: 16px;
+}
+
+.audio-filename {
+  font-size: 16px;
+  font-weight: 500;
+  color: #1e293b;
+  margin-bottom: 24px;
+  word-break: break-all;
+  text-align: center;
+  max-width: 80%;
+}
+
+.preview-audio {
+  width: 100%;
+  max-width: 400px;
+}
+
+.preview-pdf-wrapper {
+  width: 100%;
+  height: 70vh;
+}
+
+.preview-pdf {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.preview-text-wrapper {
+  width: 100%;
+  padding: 20px;
+  background: #1e293b;
+  overflow: auto;
+  max-height: 70vh;
+}
+
+.preview-text {
+  margin: 0;
+  padding: 16px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  background: transparent;
+}
+
+.preview-unsupported {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  color: #64748b;
+}
+
+.preview-unsupported h3 {
+  margin: 16px 0 8px;
+  color: #1e293b;
+  font-size: 18px;
+}
+
+.preview-unsupported p {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.preview-unsupported .file-info {
+  margin: 16px 0 24px;
+  padding: 12px 20px;
+  background: #f8fafc;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.preview-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.preview-size {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.preview-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Drag and Drop Overlay Styles */
+.drop-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(59, 130, 246, 0.15);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.drop-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 64px;
+  background: white;
+  border-radius: 20px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  border: 3px dashed #3b82f6;
+  text-align: center;
+}
+
+.drop-content .el-icon {
+  color: #3b82f6;
+  margin-bottom: 16px;
+  animation: bounce 1s infinite;
+}
+
+.drop-content h3 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.drop-content p {
+  margin: 0;
+  font-size: 14px;
+  color: #64748b;
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* Fade transition for drop overlay */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

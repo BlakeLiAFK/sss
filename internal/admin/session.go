@@ -14,6 +14,101 @@ import (
 	"sss/internal/utils"
 )
 
+// LoginAttempt 登录尝试记录
+type LoginAttempt struct {
+	FailCount int       // 失败次数
+	LastFail  time.Time // 最后失败时间
+	LockedAt  time.Time // 锁定时间
+}
+
+// LoginRateLimiter 登录速率限制器
+type LoginRateLimiter struct {
+	mu       sync.RWMutex
+	attempts map[string]*LoginAttempt // IP -> 尝试记录
+}
+
+// 速率限制配置
+const (
+	maxLoginAttempts  = 5               // 最大失败次数
+	lockDuration      = 15 * time.Minute // 锁定时长
+	attemptResetAfter = 30 * time.Minute // 失败计数重置时间
+)
+
+var loginLimiter = &LoginRateLimiter{
+	attempts: make(map[string]*LoginAttempt),
+}
+
+// IsBlocked 检查 IP 是否被锁定
+func (l *LoginRateLimiter) IsBlocked(ip string) (bool, time.Duration) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	attempt, exists := l.attempts[ip]
+	if !exists {
+		return false, 0
+	}
+
+	// 检查是否在锁定期内
+	if !attempt.LockedAt.IsZero() {
+		remaining := lockDuration - time.Since(attempt.LockedAt)
+		if remaining > 0 {
+			return true, remaining
+		}
+	}
+
+	return false, 0
+}
+
+// RecordFailure 记录登录失败
+func (l *LoginRateLimiter) RecordFailure(ip string) (blocked bool, remaining time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	attempt, exists := l.attempts[ip]
+	if !exists {
+		attempt = &LoginAttempt{}
+		l.attempts[ip] = attempt
+	}
+
+	// 如果距离上次失败超过重置时间，重置计数
+	if time.Since(attempt.LastFail) > attemptResetAfter {
+		attempt.FailCount = 0
+		attempt.LockedAt = time.Time{}
+	}
+
+	attempt.FailCount++
+	attempt.LastFail = time.Now()
+
+	// 达到最大失败次数，锁定账户
+	if attempt.FailCount >= maxLoginAttempts {
+		attempt.LockedAt = time.Now()
+		return true, lockDuration
+	}
+
+	return false, 0
+}
+
+// RecordSuccess 记录登录成功（清除失败记录）
+func (l *LoginRateLimiter) RecordSuccess(ip string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.attempts, ip)
+}
+
+// Cleanup 清理过期记录（可选，定期调用）
+func (l *LoginRateLimiter) Cleanup() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := time.Now()
+	for ip, attempt := range l.attempts {
+		// 清理超过1小时未活动的记录
+		if now.Sub(attempt.LastFail) > time.Hour {
+			delete(l.attempts, ip)
+		}
+	}
+}
+
 // Session 管理员会话
 type Session struct {
 	Token     string
@@ -76,7 +171,10 @@ func (s *SessionStore) DeleteSession(token string) {
 // generateSessionToken 生成会话令牌
 func generateSessionToken() string {
 	bytes := make([]byte, 32)
-	rand.Read(bytes)
+	if _, err := rand.Read(bytes); err != nil {
+		// crypto/rand 不可用是严重错误，应立即终止
+		panic("crypto/rand unavailable: " + err.Error())
+	}
 	hash := sha256.Sum256(bytes)
 	return hex.EncodeToString(hash[:])
 }
@@ -116,6 +214,21 @@ func (h *Handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 获取客户端 IP
+	clientIP := utils.GetClientIP(r)
+
+	// 检查是否被速率限制锁定
+	if blocked, remaining := loginLimiter.IsBlocked(clientIP); blocked {
+		h.Audit(r, storage.AuditActionLoginFailed, "", "", false, map[string]string{
+			"reason": "IP 被临时锁定",
+			"ip":     clientIP,
+		})
+		utils.WriteErrorResponse(w, "TooManyRequests",
+			"登录尝试次数过多，请 "+remaining.Round(time.Minute).String()+" 后重试",
+			http.StatusTooManyRequests)
+		return
+	}
+
 	// 检查系统是否已安装
 	if !h.metadata.IsInstalled() {
 		utils.WriteErrorResponse(w, "NotInstalled", "系统尚未安装，请先完成安装", http.StatusForbidden)
@@ -138,13 +251,31 @@ func (h *Handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	passwordMatch := h.metadata.VerifyAdminPassword(req.Password)
 
 	if !usernameMatch || !passwordMatch {
+		// 记录失败并检查是否需要锁定
+		blocked, remaining := loginLimiter.RecordFailure(clientIP)
+
 		// 记录登录失败
-		h.Audit(r, storage.AuditActionLoginFailed, req.Username, "", false, map[string]string{
+		extra := map[string]string{
 			"reason": "用户名或密码错误",
-		})
-		utils.WriteErrorResponse(w, "Unauthorized", "用户名或密码错误", http.StatusUnauthorized)
+			"ip":     clientIP,
+		}
+		if blocked {
+			extra["locked_for"] = remaining.String()
+		}
+		h.Audit(r, storage.AuditActionLoginFailed, req.Username, "", false, extra)
+
+		if blocked {
+			utils.WriteErrorResponse(w, "TooManyRequests",
+				"登录尝试次数过多，账户已被临时锁定 "+remaining.Round(time.Minute).String(),
+				http.StatusTooManyRequests)
+		} else {
+			utils.WriteErrorResponse(w, "Unauthorized", "用户名或密码错误", http.StatusUnauthorized)
+		}
 		return
 	}
+
+	// 登录成功，清除失败记录
+	loginLimiter.RecordSuccess(clientIP)
 
 	// 创建会话
 	token := sessionStore.CreateSession()
@@ -152,12 +283,14 @@ func (h *Handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	// 记录登录成功
 	h.Audit(r, storage.AuditActionLogin, req.Username, "", true, nil)
 
-	// 设置 cookie
+	// 设置 cookie（根据请求协议设置 Secure 标志）
+	isHTTPS := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 	http.SetCookie(w, &http.Cookie{
 		Name:     "admin_token",
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   isHTTPS,
 		MaxAge:   int(sessionDuration.Seconds()),
 		SameSite: http.SameSiteStrictMode,
 	})

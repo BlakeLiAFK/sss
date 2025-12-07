@@ -103,9 +103,13 @@ func GeneratePresignedURLWithOptions(method, bucket, key string, opts *PresignOp
 	signingKey := deriveSigningKey(cfg.Auth.SecretAccessKey, dateStr, cfg.Server.Region)
 	signature := hex.EncodeToString(hmacSHA256(signingKey, []byte(stringToSign)))
 
-	// 构建最终 URL
-	return fmt.Sprintf("http://%s%s?%s&X-Amz-Signature=%s",
-		host, path, canonicalQuery, signature)
+	// 构建最终 URL（使用可配置的协议）
+	scheme := "http"
+	if cfg.Security.PresignScheme != "" {
+		scheme = cfg.Security.PresignScheme
+	}
+	return fmt.Sprintf("%s://%s%s?%s&X-Amz-Signature=%s",
+		scheme, host, path, canonicalQuery, signature)
 }
 
 func getCanonicalQueryStringForPresign(params url.Values) string {

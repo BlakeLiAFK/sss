@@ -142,15 +142,21 @@ func (c *APIKeyCache) CheckPermission(accessKeyID, bucketName string, needWrite 
 
 // === MetadataStore API Key 操作 ===
 
-// CreateAPIKey 创建API密钥
+// CreateAPIKey 创建API密钥（SecretKey 加密存储）
 func (m *MetadataStore) CreateAPIKey(description string) (*APIKey, error) {
 	accessKeyID := generateRandomKey(20)
 	secretAccessKey := generateRandomKey(40)
 
-	_, err := m.db.Exec(`
+	// 加密 SecretKey
+	encryptedSecret, err := m.EncryptSecret(secretAccessKey)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = m.db.Exec(`
 		INSERT INTO api_keys (access_key_id, secret_access_key, description, created_at, enabled)
 		VALUES (?, ?, ?, ?, 1)`,
-		accessKeyID, secretAccessKey, description, time.Now().UTC(),
+		accessKeyID, encryptedSecret, description, time.Now().UTC(),
 	)
 	if err != nil {
 		return nil, err
@@ -158,7 +164,7 @@ func (m *MetadataStore) CreateAPIKey(description string) (*APIKey, error) {
 
 	return &APIKey{
 		AccessKeyID:     accessKeyID,
-		SecretAccessKey: secretAccessKey,
+		SecretAccessKey: secretAccessKey, // 返回明文给用户
 		Description:     description,
 		CreatedAt:       time.Now().UTC(),
 		Enabled:         true,
@@ -199,7 +205,7 @@ func (m *MetadataStore) ListAPIKeys() ([]APIKey, error) {
 	return keys, nil
 }
 
-// ListAPIKeysWithPermissions 列出所有API密钥及其权限（内部使用，包含SecretKey）
+// ListAPIKeysWithPermissions 列出所有API密钥及其权限（内部使用，包含SecretKey，自动解密）
 func (m *MetadataStore) ListAPIKeysWithPermissions() ([]APIKeyWithPermissions, error) {
 	rows, err := m.db.Query(`
 		SELECT access_key_id, secret_access_key, description, created_at, enabled
@@ -212,7 +218,13 @@ func (m *MetadataStore) ListAPIKeysWithPermissions() ([]APIKeyWithPermissions, e
 	var keys []APIKeyWithPermissions
 	for rows.Next() {
 		var key APIKeyWithPermissions
-		if err := rows.Scan(&key.AccessKeyID, &key.SecretAccessKey, &key.Description, &key.CreatedAt, &key.Enabled); err != nil {
+		var encryptedSecret string
+		if err := rows.Scan(&key.AccessKeyID, &encryptedSecret, &key.Description, &key.CreatedAt, &key.Enabled); err != nil {
+			return nil, err
+		}
+		// 解密 SecretKey
+		key.SecretAccessKey, err = m.DecryptSecret(encryptedSecret)
+		if err != nil {
 			return nil, err
 		}
 		keys = append(keys, key)
@@ -249,10 +261,17 @@ func (m *MetadataStore) UpdateAPIKeyDescription(accessKeyID, description string)
 	return err
 }
 
-// ResetAPIKeySecret 重置API密钥的SecretKey
+// ResetAPIKeySecret 重置API密钥的SecretKey（加密存储）
 func (m *MetadataStore) ResetAPIKeySecret(accessKeyID string) (string, error) {
 	newSecret := generateRandomKey(40)
-	result, err := m.db.Exec("UPDATE api_keys SET secret_access_key = ? WHERE access_key_id = ?", newSecret, accessKeyID)
+
+	// 加密 SecretKey
+	encryptedSecret, err := m.EncryptSecret(newSecret)
+	if err != nil {
+		return "", err
+	}
+
+	result, err := m.db.Exec("UPDATE api_keys SET secret_access_key = ? WHERE access_key_id = ?", encryptedSecret, accessKeyID)
 	if err != nil {
 		return "", err
 	}
@@ -260,7 +279,7 @@ func (m *MetadataStore) ResetAPIKeySecret(accessKeyID string) (string, error) {
 	if rows == 0 {
 		return "", sql.ErrNoRows
 	}
-	return newSecret, nil
+	return newSecret, nil // 返回明文给用户
 }
 
 // === API Key Permission 操作 ===
@@ -309,6 +328,9 @@ func (m *MetadataStore) GetAPIKeyPermissions(accessKeyID string) ([]APIKeyPermis
 // generateRandomKey 生成随机密钥
 func generateRandomKey(length int) string {
 	bytes := make([]byte, length/2)
-	rand.Read(bytes)
+	if _, err := rand.Read(bytes); err != nil {
+		// crypto/rand 不可用是严重错误，应立即终止
+		panic("crypto/rand unavailable: " + err.Error())
+	}
 	return hex.EncodeToString(bytes)
 }

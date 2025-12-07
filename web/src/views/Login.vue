@@ -53,15 +53,62 @@
             size="large"
             class="login-button"
           >
-            Sign In
+            登录
           </el-button>
         </el-form-item>
       </el-form>
 
       <div class="login-footer">
-        <span>Lightweight Enterprise Storage</span>
+        <el-button link type="primary" @click="showResetDialog = true">
+          忘记密码？
+        </el-button>
       </div>
     </div>
+
+    <!-- 密码重置对话框 -->
+    <el-dialog v-model="showResetDialog" title="重置管理员密码" width="450px">
+      <div v-if="!resetFileExists">
+        <el-alert type="info" :closable="false" show-icon>
+          <template #title>
+            <span>请在服务器上执行以下命令：</span>
+          </template>
+          <template #default>
+            <code class="reset-command">{{ resetCommand }}</code>
+            <el-button size="small" @click="copyResetCommand" style="margin-left: 8px;">
+              复制
+            </el-button>
+          </template>
+        </el-alert>
+        <p class="reset-tip">执行完成后，点击下方按钮检测文件。</p>
+        <el-button type="primary" @click="checkResetFile" :loading="checkingFile">
+          检测文件
+        </el-button>
+      </div>
+
+      <div v-else>
+        <el-form :model="resetForm" :rules="resetRules" ref="resetFormRef">
+          <el-form-item label="新密码" prop="newPassword">
+            <el-input 
+              v-model="resetForm.newPassword" 
+              type="password" 
+              placeholder="至少6位字符"
+              show-password
+            />
+          </el-form-item>
+          <el-form-item label="确认密码" prop="confirmPassword">
+            <el-input 
+              v-model="resetForm.confirmPassword" 
+              type="password" 
+              placeholder="再次输入密码"
+              show-password
+            />
+          </el-form-item>
+        </el-form>
+        <el-button type="primary" @click="handleResetPassword" :loading="resetting">
+          重置密码
+        </el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -72,23 +119,56 @@ import { ElMessage, type FormInstance } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 import { User, Lock, Link, Location } from '@element-plus/icons-vue'
 import axios from 'axios'
+import { getBaseUrl } from '../api/client'
 
 const router = useRouter()
 const auth = useAuthStore()
 const formRef = ref<FormInstance>()
+const resetFormRef = ref<FormInstance>()
 const loading = ref(false)
 
 const form = reactive({
-  endpoint: auth.endpoint || window.location.origin,
+  endpoint: auth.endpoint || getBaseUrl(),
   region: auth.region || 'us-east-1',
   username: 'admin',
   password: ''
 })
 
 const rules = {
-  endpoint: [{ required: true, message: 'Please input Endpoint', trigger: 'blur' }],
-  username: [{ required: true, message: 'Please input Username', trigger: 'blur' }],
-  password: [{ required: true, message: 'Please input Password', trigger: 'blur' }]
+  endpoint: [{ required: true, message: '请输入服务器地址', trigger: 'blur' }],
+  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+}
+
+// 密码重置相关
+const showResetDialog = ref(false)
+const resetFileExists = ref(false)
+const resetCommand = ref('')
+const checkingFile = ref(false)
+const resetting = ref(false)
+
+const resetForm = reactive({
+  newPassword: '',
+  confirmPassword: ''
+})
+
+const validateConfirmPassword = (_rule: any, value: string, callback: Function) => {
+  if (value !== resetForm.newPassword) {
+    callback(new Error('两次输入的密码不一致'))
+  } else {
+    callback()
+  }
+}
+
+const resetRules = {
+  newPassword: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { min: 6, message: '密码至少6位字符', trigger: 'blur' }
+  ],
+  confirmPassword: [
+    { required: true, message: '请确认密码', trigger: 'blur' },
+    { validator: validateConfirmPassword, trigger: 'blur' }
+  ]
 }
 
 async function handleLogin() {
@@ -104,16 +184,78 @@ async function handleLogin() {
       })
 
       if (response.data.success) {
-        auth.login(response.data.token, form.endpoint, form.region)
-        ElMessage.success('Login successful')
+        auth.login(
+          response.data.token,
+          form.endpoint,
+          form.region,
+          response.data.accessKeyId || '',
+          response.data.secretAccessKey || ''
+        )
+        ElMessage.success('登录成功')
         router.push('/')
       } else {
-        ElMessage.error(response.data.message || 'Login failed')
+        ElMessage.error(response.data.message || response.data.Message || '登录失败')
       }
     } catch (e: any) {
-      ElMessage.error('Login failed: ' + (e.response?.data?.message || e.message))
+      const msg = e.response?.data?.Message || e.response?.data?.message || e.message
+      ElMessage.error('登录失败: ' + msg)
     } finally {
       loading.value = false
+    }
+  })
+}
+
+// 检测重置文件
+async function checkResetFile() {
+  checkingFile.value = true
+  try {
+    const response = await axios.get(`${form.endpoint}/api/setup/reset-password/check`)
+    if (response.data.file_exists) {
+      resetFileExists.value = true
+      ElMessage.success('检测到重置文件，请设置新密码')
+    } else {
+      resetCommand.value = response.data.command
+      ElMessage.warning('未检测到重置文件，请先在服务器执行命令')
+    }
+  } catch (e: any) {
+    ElMessage.error('检测失败: ' + (e.response?.data?.Message || e.message))
+  } finally {
+    checkingFile.value = false
+  }
+}
+
+// 复制重置命令
+function copyResetCommand() {
+  navigator.clipboard.writeText(resetCommand.value)
+  ElMessage.success('已复制到剪贴板')
+}
+
+// 重置密码
+async function handleResetPassword() {
+  if (!resetFormRef.value) return
+  
+  await resetFormRef.value.validate(async (valid) => {
+    if (!valid) return
+
+    resetting.value = true
+    try {
+      const response = await axios.post(`${form.endpoint}/api/setup/reset-password`, {
+        new_password: resetForm.newPassword
+      })
+      
+      if (response.data.success) {
+        ElMessage.success('密码重置成功，请使用新密码登录')
+        showResetDialog.value = false
+        resetFileExists.value = false
+        resetForm.newPassword = ''
+        resetForm.confirmPassword = ''
+      } else {
+        ElMessage.error(response.data.message || '重置失败')
+      }
+    } catch (e: any) {
+      ElMessage.error('重置失败: ' + (e.response?.data?.Message || e.message))
+    } finally {
+      resetting.value = false
     }
   })
 }
@@ -200,7 +342,22 @@ async function handleLogin() {
 
 .login-footer {
   text-align: center;
-  color: #94a3b8;
-  font-size: 12px;
+  margin-top: 16px;
+}
+
+.reset-command {
+  display: block;
+  background: #f1f5f9;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-family: monospace;
+  margin: 8px 0;
+  word-break: break-all;
+}
+
+.reset-tip {
+  color: #64748b;
+  font-size: 14px;
+  margin: 16px 0;
 }
 </style>

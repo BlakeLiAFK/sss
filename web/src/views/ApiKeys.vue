@@ -2,13 +2,13 @@
   <div class="page-container">
     <div class="page-header">
       <div class="page-title">
-        <h1>API Keys</h1>
-        <p class="page-subtitle">Manage access credentials for S3 API</p>
+        <h1>API 密钥</h1>
+        <p class="page-subtitle">管理 S3 API 访问凭证</p>
       </div>
       <div class="page-actions">
-        <el-button type="primary" @click="showCreateDialog">
+        <el-button type="primary" @click="showCreateDialog" class="primary-btn">
           <el-icon><Plus /></el-icon>
-          Create API Key
+          <span class="btn-text">新建</span>
         </el-button>
       </div>
     </div>
@@ -506,39 +506,60 @@ onMounted(() => {
 <style scoped>
 .page-container {
   max-width: 1200px;
-  margin: 0 auto;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24px;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .page-title h1 {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 600;
-  color: #1e293b;
+  color: #333;
   margin: 0;
 }
 
 .page-subtitle {
-  font-size: 14px;
-  color: #64748b;
+  font-size: 13px;
+  color: #888;
   margin: 4px 0 0;
 }
 
 .page-actions {
   display: flex;
-  gap: 12px;
+  gap: 10px;
+}
+
+.primary-btn {
+  background: #e67e22;
+  border-color: #e67e22;
+}
+
+.primary-btn:hover {
+  background: #d35400;
+  border-color: #d35400;
 }
 
 .content-card {
-  background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #eee;
   overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .btn-text {
+    display: none;
+  }
 }
 
 .data-table {

@@ -124,8 +124,9 @@ func (h *Handler) handleInstall(w http.ResponseWriter, r *http.Request) {
 		utils.WriteErrorResponse(w, "InvalidParameter", "管理员密码不能为空", http.StatusBadRequest)
 		return
 	}
-	if len(req.AdminPassword) < 6 {
-		utils.WriteErrorResponse(w, "InvalidParameter", "密码长度至少6位", http.StatusBadRequest)
+	// 使用统一的密码复杂度验证
+	if err := storage.ValidatePassword(req.AdminPassword); err != nil {
+		utils.WriteErrorResponse(w, "InvalidParameter", err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -230,8 +231,9 @@ func (h *Handler) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		utils.WriteErrorResponse(w, "InvalidParameter", "新密码不能为空", http.StatusBadRequest)
 		return
 	}
-	if len(req.NewPassword) < 6 {
-		utils.WriteErrorResponse(w, "InvalidParameter", "密码长度至少6位", http.StatusBadRequest)
+	// 使用统一的密码复杂度验证
+	if err := storage.ValidatePassword(req.NewPassword); err != nil {
+		utils.WriteErrorResponse(w, "InvalidParameter", err.Error(), http.StatusBadRequest)
 		return
 	}
 

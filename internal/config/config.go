@@ -1,94 +1,165 @@
 package config
 
 import (
-	"os"
-
-	"gopkg.in/yaml.v3"
+	"strconv"
 )
 
-// Config 应用配置
+// Config 运行时配置（不再从 YAML 加载，全部从命令行参数和数据库获取）
 type Config struct {
-	Server  ServerConfig  `yaml:"server"`
-	Storage StorageConfig `yaml:"storage"`
-	Auth    AuthConfig    `yaml:"auth"`
-	Log     LogConfig     `yaml:"log"`
+	Server   ServerConfig
+	Storage  StorageConfig
+	Auth     AuthConfig
+	Security SecurityConfig
+	Log      LogConfig
 }
 
+// SecurityConfig 安全配置
+type SecurityConfig struct {
+	CORSOrigin    string // CORS 允许的来源，默认 "*"
+	PresignScheme string // 预签名URL协议，"http" 或 "https"，默认 "http"
+}
+
+// ServerConfig 服务器配置（启动时通过命令行参数设置，运行时不可改）
 type ServerConfig struct {
-	Host   string `yaml:"host"`
-	Port   int    `yaml:"port"`
-	Region string `yaml:"region"`
+	Host   string // 监听地址，命令行参数
+	Port   int    // 监听端口，命令行参数
+	Region string // S3 区域，可在线修改
 }
 
+// StorageConfig 存储配置
 type StorageConfig struct {
-	DataPath        string `yaml:"data_path"`
-	DBPath          string `yaml:"db_path"`
-	MaxObjectSize   int64  `yaml:"max_object_size"`   // 全局最大对象大小（字节），0表示无限制
-	MaxUploadSize   int64  `yaml:"max_upload_size"`   // 预签名URL最大上传大小（字节），0表示无限制
+	DataPath      string // 数据目录，命令行参数（运行时不可改）
+	DBPath        string // 数据库路径，命令行参数（运行时不可改）
+	MaxObjectSize int64  // 最大对象大小，可在线修改
+	MaxUploadSize int64  // 最大上传大小，可在线修改
 }
 
+// AuthConfig 认证配置
 type AuthConfig struct {
-	// 管理员账号 (Web UI 登录)
-	AdminUsername string `yaml:"admin_username"`
-	AdminPassword string `yaml:"admin_password"`
-
-	// 兼容旧配置：如果没有配置管理员账号，使用这个作为默认 API Key
-	AccessKeyID     string `yaml:"access_key_id"`
-	SecretAccessKey string `yaml:"secret_access_key"`
+	AdminUsername   string // 管理员用户名
+	AccessKeyID     string // 默认 API Key ID
+	SecretAccessKey string // 默认 API Key Secret
+	PasswordHashed  bool   // 密码是否已哈希（从数据库加载时为 true）
 }
 
+// LogConfig 日志配置
 type LogConfig struct {
-	Level string `yaml:"level"`
+	Level string
 }
 
+// Global 全局配置实例
 var Global *Config
 
-// Load 从文件加载配置
-func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
+// NewDefault 创建默认配置
+func NewDefault() *Config {
+	cfg := &Config{
+		Server: ServerConfig{
+			Host:   "0.0.0.0",
+			Port:   8080,
+			Region: "us-east-1",
+		},
+		Storage: StorageConfig{
+			DataPath:      "./data/buckets",
+			DBPath:        "./data/metadata.db",
+			MaxObjectSize: 5 * 1024 * 1024 * 1024, // 5GB
+			MaxUploadSize: 1024 * 1024 * 1024,     // 1GB
+		},
+		Auth: AuthConfig{
+			AdminUsername: "admin",
+		},
+		Security: SecurityConfig{
+			CORSOrigin:    "*",    // 默认允许所有来源
+			PresignScheme: "http", // 默认 HTTP
+		},
+		Log: LogConfig{
+			Level: "info",
+		},
 	}
-
-	cfg := &Config{}
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, err
-	}
-
-	// 设置默认值
-	if cfg.Server.Host == "" {
-		cfg.Server.Host = "0.0.0.0"
-	}
-	if cfg.Server.Port == 0 {
-		cfg.Server.Port = 9000
-	}
-	if cfg.Server.Region == "" {
-		cfg.Server.Region = "us-east-1"
-	}
-	if cfg.Storage.DataPath == "" {
-		cfg.Storage.DataPath = "./data/buckets"
-	}
-	if cfg.Storage.DBPath == "" {
-		cfg.Storage.DBPath = "./data/metadata.db"
-	}
-	if cfg.Storage.MaxObjectSize == 0 {
-		cfg.Storage.MaxObjectSize = 5 * 1024 * 1024 * 1024 // 默认5GB
-	}
-	if cfg.Storage.MaxUploadSize == 0 {
-		cfg.Storage.MaxUploadSize = 5 * 1024 * 1024 * 1024 // 默认5GB
-	}
-	if cfg.Log.Level == "" {
-		cfg.Log.Level = "info"
-	}
-
-	// 管理员账号默认值
-	if cfg.Auth.AdminUsername == "" {
-		cfg.Auth.AdminUsername = "admin"
-	}
-	if cfg.Auth.AdminPassword == "" {
-		cfg.Auth.AdminPassword = "admin"
-	}
-
 	Global = cfg
-	return cfg, nil
+	return cfg
+}
+
+// SettingsLoader 数据库配置加载接口
+type SettingsLoader interface {
+	GetSetting(key string) (string, error)
+	IsInstalled() bool
+	GetAdminUsername() string
+	VerifyAdminPassword(password string) bool
+	GetAuthConfig() (accessKeyID, secretAccessKey string)
+	GetStorageConfig() (dataPath string, maxObjectSize, maxUploadSize int64)
+}
+
+// LoadFromDB 从数据库加载可修改的配置（Region、存储限制等）
+// 注意：Host、Port、DataPath、DBPath 保持命令行参数值，不从数据库覆盖
+func LoadFromDB(loader SettingsLoader) {
+	if Global == nil {
+		Global = NewDefault()
+	}
+
+	// 如果系统已安装，从数据库加载配置
+	if loader.IsInstalled() {
+		// 只加载 Region（Host/Port 由命令行参数决定）
+		if region, err := loader.GetSetting("server.region"); err == nil && region != "" {
+			Global.Server.Region = region
+		}
+
+		// 存储配置（只加载大小限制，DataPath 由命令行参数决定）
+		_, maxObjSize, maxUploadSize := loader.GetStorageConfig()
+		if maxObjSize > 0 {
+			Global.Storage.MaxObjectSize = maxObjSize
+		}
+		if maxUploadSize > 0 {
+			Global.Storage.MaxUploadSize = maxUploadSize
+		}
+
+		// 安全配置
+		if corsOrigin, err := loader.GetSetting("security.cors_origin"); err == nil && corsOrigin != "" {
+			Global.Security.CORSOrigin = corsOrigin
+		}
+		if presignScheme, err := loader.GetSetting("security.presign_scheme"); err == nil && presignScheme != "" {
+			Global.Security.PresignScheme = presignScheme
+		}
+
+		// 认证配置
+		Global.Auth.AdminUsername = loader.GetAdminUsername()
+		Global.Auth.PasswordHashed = true
+
+		// API Key
+		accessKeyID, secretAccessKey := loader.GetAuthConfig()
+		if accessKeyID != "" {
+			Global.Auth.AccessKeyID = accessKeyID
+			Global.Auth.SecretAccessKey = secretAccessKey
+		}
+	}
+}
+
+// UpdateFromSettings 从数据库设置更新运行时配置
+func UpdateFromSettings(settings map[string]string) {
+	if Global == nil {
+		Global = NewDefault()
+	}
+
+	// 只更新运行时可修改的配置
+	if v, ok := settings["server.region"]; ok && v != "" {
+		Global.Server.Region = v
+	}
+	if v, ok := settings["storage.max_object_size"]; ok && v != "" {
+		if size, err := strconv.ParseInt(v, 10, 64); err == nil && size > 0 {
+			Global.Storage.MaxObjectSize = size
+		}
+	}
+	if v, ok := settings["storage.max_upload_size"]; ok && v != "" {
+		if size, err := strconv.ParseInt(v, 10, 64); err == nil && size > 0 {
+			Global.Storage.MaxUploadSize = size
+		}
+	}
+	if v, ok := settings["auth.admin_username"]; ok && v != "" {
+		Global.Auth.AdminUsername = v
+	}
+	if v, ok := settings["auth.access_key_id"]; ok && v != "" {
+		Global.Auth.AccessKeyID = v
+	}
+	if v, ok := settings["auth.secret_access_key"]; ok && v != "" {
+		Global.Auth.SecretAccessKey = v
+	}
 }
