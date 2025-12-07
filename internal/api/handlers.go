@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"sss/internal/admin"
 	"sss/internal/auth"
 	"sss/internal/storage"
 	"sss/internal/utils"
@@ -21,17 +22,19 @@ const (
 
 // Server S3服务器
 type Server struct {
-	metadata  *storage.MetadataStore
-	filestore *storage.FileStore
-	mux       *http.ServeMux
+	metadata     *storage.MetadataStore
+	filestore    *storage.FileStore
+	adminHandler *admin.Handler
+	mux          *http.ServeMux
 }
 
 // NewServer 创建服务器
 func NewServer(metadata *storage.MetadataStore, filestore *storage.FileStore) *Server {
 	s := &Server{
-		metadata:  metadata,
-		filestore: filestore,
-		mux:       http.NewServeMux(),
+		metadata:     metadata,
+		filestore:    filestore,
+		adminHandler: admin.NewHandler(metadata, filestore),
+		mux:          http.NewServeMux(),
 	}
 	s.setupRoutes()
 	return s
@@ -104,6 +107,10 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	} else if strings.HasPrefix(r.URL.Path, "/assets/") {
 		s.serveStatic(w, r)
 		return
+	} else if strings.HasPrefix(r.URL.Path, "/admin") {
+		// 管理界面 SPA 路由，返回 index.html 让前端路由处理
+		s.serveStatic(w, r)
+		return
 	} else if isRootStaticFile(r.URL.Path) {
 		// 处理根目录静态文件（favicon.svg, robots.txt 等）
 		s.serveStatic(w, r)
@@ -112,17 +119,14 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// 2. 检查是否是API管理路径
 	if strings.HasPrefix(r.URL.Path, "/api/") {
-		// 管理员登录接口不需要认证
-		if strings.HasPrefix(r.URL.Path, "/api/admin/login") {
-			s.handleAdminLogin(w, r)
+		// 健康检查端点 - 不需要认证
+		if r.URL.Path == "/api/health" {
+			s.handleHealth(w, r)
 			return
 		}
-		// 管理 API 需要管理员认证（使用 session token）
-		if strings.HasPrefix(r.URL.Path, "/api/admin/") {
-			if !s.checkAdminAuth(r, w) {
-				return
-			}
-			s.handleAdminAPI(w, r)
+		// 安装相关 API 和管理员 API - 委托给 adminHandler
+		if strings.HasPrefix(r.URL.Path, "/api/setup") || strings.HasPrefix(r.URL.Path, "/api/admin/") {
+			s.adminHandler.ServeHTTP(w, r)
 			return
 		}
 		// 其他 API 路径需要 S3 认证
@@ -218,7 +222,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		s.handleListObjects(w, r, bucket)
 
 	// Multipart Upload 操作
-	case query.Get("uploads") != "":
+	case query.Has("uploads"):
 		if r.Method == "POST" && key != "" {
 			// InitiateMultipartUpload
 			s.handleInitiateMultipartUpload(w, r, bucket, key)
@@ -282,9 +286,9 @@ type PresignRequest struct {
 
 // PresignResponse 预签名响应结构
 type PresignResponse struct {
-	URL    string `json:"url"`
-	Method string `json:"method"`
-	Expires int   `json:"expires"`
+	URL     string `json:"url"`
+	Method  string `json:"method"`
+	Expires int    `json:"expires"`
 }
 
 // handlePresign 处理预签名URL生成请求
@@ -362,9 +366,9 @@ func (s *Server) handlePresign(w http.ResponseWriter, r *http.Request) {
 
 	// 构建响应
 	resp := PresignResponse{
-		URL:      url,
-		Method:   req.Method,
-		Expires:  req.ExpiresMinutes * 60, // 转换为秒
+		URL:     url,
+		Method:  req.Method,
+		Expires: req.ExpiresMinutes * 60, // 转换为秒
 	}
 
 	utils.WriteJSONResponse(w, resp)
@@ -601,4 +605,12 @@ func (s *Server) checkBucketPermission(r *http.Request, w http.ResponseWriter, b
 		return false
 	}
 	return true
+}
+
+// handleHealth 健康检查端点 - 不需要认证
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	utils.WriteJSONResponse(w, map[string]interface{}{
+		"status":  "ok",
+		"version": "1.1.0",
+	})
 }
