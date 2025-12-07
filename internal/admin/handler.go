@@ -63,8 +63,6 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		h.handleAdminBucketsAPI(w, r)
 	case strings.HasPrefix(path, "buckets/"):
 		h.handleAdminBucketOps(w, r, strings.TrimPrefix(path, "buckets/"))
-	case strings.HasPrefix(path, "objects/"):
-		h.adminObjectsHandler(w, r, strings.TrimPrefix(path, "objects/"))
 	case path == "stats/overview":
 		h.handleStorageStats(w, r)
 	case path == "stats/recent":
@@ -85,10 +83,6 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		h.handleSettings(w, r)
 	case path == "settings/password":
 		h.handleChangePassword(w, r)
-	case path == "batch/delete":
-		h.batchDeleteObjects(w, r, "")
-	case path == "batch/download":
-		h.batchDownloadObjects(w, r, "")
 	default:
 		utils.WriteErrorResponse(w, "NotFound", "API endpoint not found", http.StatusNotFound)
 	}
