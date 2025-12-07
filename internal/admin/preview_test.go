@@ -1,8 +1,15 @@
 package admin
 
 import (
+	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"sss/internal/config"
+	"sss/internal/storage"
+	"sss/internal/utils"
 )
 
 // TestGetMimeType 测试MIME类型检测
@@ -398,5 +405,378 @@ func BenchmarkIsValidUTF8(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		isValidUTF8(content)
+	}
+}
+
+// ============================================================================
+// HTTP 处理器测试
+// ============================================================================
+
+// TestPreviewObject_HTTP 测试预览对象HTTP处理器
+func TestPreviewObject_HTTP(t *testing.T) {
+	handler, cleanup := setupAdminTestHandler(t)
+	defer cleanup()
+
+	setupInstalledSystem(t, handler)
+
+	// 创建测试桶和文本文件
+	bucketName := "preview-test-bucket"
+	handler.metadata.CreateBucket(bucketName)
+	handler.filestore.CreateBucket(bucketName)
+
+	// 创建文本文件
+	textContent := []byte("Hello World\nLine 2\nLine 3")
+	storagePath, etag, _ := handler.filestore.PutObject(bucketName, "test.txt", bytes.NewReader(textContent), int64(len(textContent)))
+	obj := &storage.Object{
+		Bucket:      bucketName,
+		Key:         "test.txt",
+		Size:        int64(len(textContent)),
+		ETag:        etag,
+		ContentType: "text/plain",
+		StoragePath: storagePath,
+	}
+	handler.metadata.PutObject(obj)
+
+	// 创建图片文件（空文件用于类型检测测试）
+	imgContent := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A} // PNG header
+	imgPath, imgEtag, _ := handler.filestore.PutObject(bucketName, "image.png", bytes.NewReader(imgContent), int64(len(imgContent)))
+	imgObj := &storage.Object{
+		Bucket:      bucketName,
+		Key:         "image.png",
+		Size:        int64(len(imgContent)),
+		ETag:        imgEtag,
+		ContentType: "image/png",
+		StoragePath: imgPath,
+	}
+	handler.metadata.PutObject(imgObj)
+
+	t.Run("预览文本文件成功", func(t *testing.T) {
+		token := sessionStore.CreateSession()
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/buckets/"+bucketName+"/preview?key=test.txt", nil)
+		req.Header.Set("X-Admin-Token", token)
+		rec := httptest.NewRecorder()
+
+		handler.previewObject(rec, req, bucketName)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("状态码错误: 期望 %d, 实际 %d, body: %s", http.StatusOK, rec.Code, rec.Body.String())
+		}
+
+		var resp PreviewResponse
+		json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.Type != "text" {
+			t.Errorf("Type 错误: 期望 text, 实际 %s", resp.Type)
+		}
+		if !resp.Previewable {
+			t.Error("Previewable 应该为 true")
+		}
+		if resp.Content == "" {
+			t.Error("Content 不应为空")
+		}
+	})
+
+	t.Run("预览图片文件返回URL", func(t *testing.T) {
+		token := sessionStore.CreateSession()
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/buckets/"+bucketName+"/preview?key=image.png", nil)
+		req.Header.Set("X-Admin-Token", token)
+		rec := httptest.NewRecorder()
+
+		handler.previewObject(rec, req, bucketName)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusOK, rec.Code)
+		}
+
+		var resp PreviewResponse
+		json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.Type != "image" {
+			t.Errorf("Type 错误: 期望 image, 实际 %s", resp.Type)
+		}
+		if resp.URL == "" {
+			t.Error("URL 不应为空")
+		}
+	})
+
+	t.Run("缺少key参数返回400", func(t *testing.T) {
+		token := sessionStore.CreateSession()
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/buckets/"+bucketName+"/preview", nil)
+		req.Header.Set("X-Admin-Token", token)
+		rec := httptest.NewRecorder()
+
+		handler.previewObject(rec, req, bucketName)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusBadRequest, rec.Code)
+		}
+	})
+
+	t.Run("路径遍历攻击返回400", func(t *testing.T) {
+		token := sessionStore.CreateSession()
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/buckets/"+bucketName+"/preview?key=../../../etc/passwd", nil)
+		req.Header.Set("X-Admin-Token", token)
+		rec := httptest.NewRecorder()
+
+		handler.previewObject(rec, req, bucketName)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusBadRequest, rec.Code)
+		}
+	})
+
+	t.Run("不存在的对象返回404", func(t *testing.T) {
+		token := sessionStore.CreateSession()
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/buckets/"+bucketName+"/preview?key=nonexistent.txt", nil)
+		req.Header.Set("X-Admin-Token", token)
+		rec := httptest.NewRecorder()
+
+		handler.previewObject(rec, req, bucketName)
+
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusNotFound, rec.Code)
+		}
+	})
+
+	t.Run("方法限制-只允许GET", func(t *testing.T) {
+		token := sessionStore.CreateSession()
+		req := httptest.NewRequest(http.MethodPost, "/api/admin/buckets/"+bucketName+"/preview?key=test.txt", nil)
+		req.Header.Set("X-Admin-Token", token)
+		rec := httptest.NewRecorder()
+
+		handler.previewObject(rec, req, bucketName)
+
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusMethodNotAllowed, rec.Code)
+		}
+	})
+}
+
+// TestPreviewSpecialFiles 测试特殊文件的预览
+func TestPreviewSpecialFiles(t *testing.T) {
+	handler, cleanup := setupAdminTestHandler(t)
+	defer cleanup()
+
+	setupInstalledSystem(t, handler)
+
+	bucketName := "preview-special-bucket"
+	handler.metadata.CreateBucket(bucketName)
+	handler.filestore.CreateBucket(bucketName)
+
+	t.Run("预览Dockerfile", func(t *testing.T) {
+		// 创建 Dockerfile
+		dockerContent := []byte("FROM golang:1.21\nWORKDIR /app\nCOPY . .\nRUN go build")
+		storagePath, etag, _ := handler.filestore.PutObject(bucketName, "Dockerfile", bytes.NewReader(dockerContent), int64(len(dockerContent)))
+		obj := &storage.Object{
+			Bucket:      bucketName,
+			Key:         "Dockerfile",
+			Size:        int64(len(dockerContent)),
+			ETag:        etag,
+			ContentType: "text/plain",
+			StoragePath: storagePath,
+		}
+		handler.metadata.PutObject(obj)
+
+		token := sessionStore.CreateSession()
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/buckets/"+bucketName+"/preview?key=Dockerfile", nil)
+		req.Header.Set("X-Admin-Token", token)
+		rec := httptest.NewRecorder()
+
+		handler.previewObject(rec, req, bucketName)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusOK, rec.Code)
+		}
+
+		var resp PreviewResponse
+		json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.Type != "text" {
+			t.Errorf("Dockerfile应该识别为文本: 实际 %s", resp.Type)
+		}
+	})
+
+	t.Run("预览PDF文件返回URL", func(t *testing.T) {
+		// 创建假PDF（只是测试类型检测）
+		pdfContent := []byte("%PDF-1.4 fake pdf")
+		storagePath, etag, _ := handler.filestore.PutObject(bucketName, "doc.pdf", bytes.NewReader(pdfContent), int64(len(pdfContent)))
+		obj := &storage.Object{
+			Bucket:      bucketName,
+			Key:         "doc.pdf",
+			Size:        int64(len(pdfContent)),
+			ETag:        etag,
+			ContentType: "application/pdf",
+			StoragePath: storagePath,
+		}
+		handler.metadata.PutObject(obj)
+
+		token := sessionStore.CreateSession()
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/buckets/"+bucketName+"/preview?key=doc.pdf", nil)
+		req.Header.Set("X-Admin-Token", token)
+		rec := httptest.NewRecorder()
+
+		handler.previewObject(rec, req, bucketName)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusOK, rec.Code)
+		}
+
+		var resp PreviewResponse
+		json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.Type != "pdf" {
+			t.Errorf("PDF类型错误: 期望 pdf, 实际 %s", resp.Type)
+		}
+	})
+
+	t.Run("预览未知类型返回binary", func(t *testing.T) {
+		// 创建未知类型文件
+		binContent := []byte{0x00, 0x01, 0x02, 0x03}
+		storagePath, etag, _ := handler.filestore.PutObject(bucketName, "data.xyz", bytes.NewReader(binContent), int64(len(binContent)))
+		obj := &storage.Object{
+			Bucket:      bucketName,
+			Key:         "data.xyz",
+			Size:        int64(len(binContent)),
+			ETag:        etag,
+			ContentType: "application/octet-stream",
+			StoragePath: storagePath,
+		}
+		handler.metadata.PutObject(obj)
+
+		token := sessionStore.CreateSession()
+		req := httptest.NewRequest(http.MethodGet, "/api/admin/buckets/"+bucketName+"/preview?key=data.xyz", nil)
+		req.Header.Set("X-Admin-Token", token)
+		rec := httptest.NewRecorder()
+
+		handler.previewObject(rec, req, bucketName)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusOK, rec.Code)
+		}
+
+		var resp PreviewResponse
+		json.Unmarshal(rec.Body.Bytes(), &resp)
+		if resp.Type != "binary" {
+			t.Errorf("未知类型应该返回binary: 实际 %s", resp.Type)
+		}
+		if resp.Previewable {
+			t.Error("binary类型不应该是Previewable")
+		}
+	})
+}
+
+// TestPreviewBinaryTextFile 测试包含二进制内容的"文本"文件
+func TestPreviewBinaryTextFile(t *testing.T) {
+	handler, cleanup := setupAdminTestHandler(t)
+	defer cleanup()
+
+	setupInstalledSystem(t, handler)
+
+	bucketName := "preview-binary-bucket"
+	handler.metadata.CreateBucket(bucketName)
+	handler.filestore.CreateBucket(bucketName)
+
+	// 创建包含NULL字节的txt文件（实际是二进制文件）
+	binaryContent := []byte("Hello\x00World")
+	storagePath, etag, _ := handler.filestore.PutObject(bucketName, "binary.txt", bytes.NewReader(binaryContent), int64(len(binaryContent)))
+	obj := &storage.Object{
+		Bucket:      bucketName,
+		Key:         "binary.txt",
+		Size:        int64(len(binaryContent)),
+		ETag:        etag,
+		ContentType: "text/plain",
+		StoragePath: storagePath,
+	}
+	handler.metadata.PutObject(obj)
+
+	token := sessionStore.CreateSession()
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/buckets/"+bucketName+"/preview?key=binary.txt", nil)
+	req.Header.Set("X-Admin-Token", token)
+	rec := httptest.NewRecorder()
+
+	handler.previewObject(rec, req, bucketName)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusOK, rec.Code)
+	}
+
+	var resp PreviewResponse
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	// 因为包含NULL字节，应该被识别为binary
+	if resp.Type != "binary" {
+		t.Errorf("包含NULL字节的文件应该识别为binary: 实际 %s", resp.Type)
+	}
+}
+
+// TestPreviewVideoAudio 测试视频和音频文件预览
+func TestPreviewVideoAudio(t *testing.T) {
+	handler, cleanup := setupAdminTestHandler(t)
+	defer cleanup()
+
+	setupInstalledSystem(t, handler)
+
+	bucketName := "preview-media-bucket"
+	handler.metadata.CreateBucket(bucketName)
+	handler.filestore.CreateBucket(bucketName)
+
+	testCases := []struct {
+		key          string
+		expectedType string
+	}{
+		{"video.mp4", "video"},
+		{"video.webm", "video"},
+		{"audio.mp3", "audio"},
+		{"audio.wav", "audio"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.key, func(t *testing.T) {
+			// 创建文件
+			content := []byte("fake media content")
+			storagePath, etag, _ := handler.filestore.PutObject(bucketName, tc.key, bytes.NewReader(content), int64(len(content)))
+			obj := &storage.Object{
+				Bucket:      bucketName,
+				Key:         tc.key,
+				Size:        int64(len(content)),
+				ETag:        etag,
+				ContentType: "application/octet-stream",
+				StoragePath: storagePath,
+			}
+			handler.metadata.PutObject(obj)
+
+			token := sessionStore.CreateSession()
+			req := httptest.NewRequest(http.MethodGet, "/api/admin/buckets/"+bucketName+"/preview?key="+tc.key, nil)
+			req.Header.Set("X-Admin-Token", token)
+			rec := httptest.NewRecorder()
+
+			handler.previewObject(rec, req, bucketName)
+
+			if rec.Code != http.StatusOK {
+				t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusOK, rec.Code)
+			}
+
+			var resp PreviewResponse
+			json.Unmarshal(rec.Body.Bytes(), &resp)
+			if resp.Type != tc.expectedType {
+				t.Errorf("类型错误: 期望 %s, 实际 %s", tc.expectedType, resp.Type)
+			}
+			if resp.URL == "" {
+				t.Error("媒体文件应该返回预签名URL")
+			}
+		})
+	}
+}
+
+// TestGeneratePreviewURL 测试预览URL生成
+func TestGeneratePreviewURL(t *testing.T) {
+	if config.Global == nil {
+		config.NewDefault()
+	}
+	if utils.Logger == nil {
+		utils.InitLogger("error")
+	}
+
+	handler, cleanup := setupAdminTestHandler(t)
+	defer cleanup()
+
+	url := handler.generatePreviewURL("test-bucket", "test-key.txt")
+	if url == "" {
+		t.Error("生成的预览URL不应为空")
 	}
 }

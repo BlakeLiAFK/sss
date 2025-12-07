@@ -70,6 +70,13 @@ func GetMigrateManager(metadata *MetadataStore, fileStore *FileStore) *MigrateMa
 	return migrateManager
 }
 
+// ResetMigrateManagerForTest 重置迁移管理器（仅用于测试）
+// 注意：此函数不是线程安全的，仅应在测试初始化时调用
+func ResetMigrateManagerForTest() {
+	migrateOnce = sync.Once{}
+	migrateManager = nil
+}
+
 // generateJobID 生成任务ID
 func generateJobID() string {
 	bytes := make([]byte, 16)
@@ -94,8 +101,11 @@ func (m *MigrateManager) StartMigration(cfg MigrateConfig) (string, error) {
 	}
 
 	// 检查目标桶是否存在
-	_, err := m.metadata.GetBucket(cfg.TargetBucket)
+	bucket, err := m.metadata.GetBucket(cfg.TargetBucket)
 	if err != nil {
+		return "", fmt.Errorf("failed to check target bucket: %w", err)
+	}
+	if bucket == nil {
 		return "", fmt.Errorf("target bucket not found: %s", cfg.TargetBucket)
 	}
 

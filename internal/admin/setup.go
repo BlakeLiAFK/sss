@@ -14,7 +14,8 @@ import (
 )
 
 // 密码重置文件路径
-const resetPasswordFile = "./data/.reset_password"
+// resetPasswordFile 密码重置标记文件路径（可在测试中修改）
+var resetPasswordFile = "./data/.reset_password"
 
 // SetupRequest 安装请求
 type SetupRequest struct {
