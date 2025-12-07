@@ -77,12 +77,14 @@ func (m *MetadataStore) GetSetting(key string) (string, error) {
 
 // SetSetting 设置配置项
 func (m *MetadataStore) SetSetting(key, value string) error {
-	_, err := m.db.Exec(`
-		INSERT OR REPLACE INTO system_settings (key, value, updated_at)
-		VALUES (?, ?, ?)`,
-		key, value, time.Now().UTC(),
-	)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec(`
+			INSERT OR REPLACE INTO system_settings (key, value, updated_at)
+			VALUES (?, ?, ?)`,
+			key, value, time.Now().UTC(),
+		)
+		return err
+	})
 }
 
 // GetSettings 批量获取配置项

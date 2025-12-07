@@ -101,12 +101,14 @@ func (m *MetadataStore) WriteAuditLog(log *AuditLog) error {
 		successInt = 1
 	}
 
-	_, err := m.db.Exec(`
-		INSERT INTO audit_logs (timestamp, action, actor, ip, resource, detail, success, user_agent)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		log.Timestamp, log.Action, log.Actor, log.IP, log.Resource, log.Detail, successInt, log.UserAgent,
-	)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec(`
+			INSERT INTO audit_logs (timestamp, action, actor, ip, resource, detail, success, user_agent)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			log.Timestamp, log.Action, log.Actor, log.IP, log.Resource, log.Detail, successInt, log.UserAgent,
+		)
+		return err
+	})
 }
 
 // AuditLogQuery 审计日志查询参数
@@ -248,12 +250,16 @@ func (m *MetadataStore) CleanOldAuditLogs(beforeDays int) (int64, error) {
 	}
 
 	cutoff := time.Now().AddDate(0, 0, -beforeDays)
-	result, err := m.db.Exec("DELETE FROM audit_logs WHERE timestamp < ?", cutoff)
-	if err != nil {
-		return 0, err
-	}
-
-	return result.RowsAffected()
+	var affected int64
+	err := m.withWriteLock(func() error {
+		result, err := m.db.Exec("DELETE FROM audit_logs WHERE timestamp < ?", cutoff)
+		if err != nil {
+			return err
+		}
+		affected, _ = result.RowsAffected()
+		return nil
+	})
+	return affected, err
 }
 
 // GetAuditStats 获取审计统计

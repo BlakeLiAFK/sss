@@ -153,11 +153,15 @@ func (m *MetadataStore) CreateAPIKey(description string) (*APIKey, error) {
 		return nil, err
 	}
 
-	_, err = m.db.Exec(`
-		INSERT INTO api_keys (access_key_id, secret_access_key, description, created_at, enabled)
-		VALUES (?, ?, ?, ?, 1)`,
-		accessKeyID, encryptedSecret, description, time.Now().UTC(),
-	)
+	createdAt := time.Now().UTC()
+	err = m.withWriteLock(func() error {
+		_, err := m.db.Exec(`
+			INSERT INTO api_keys (access_key_id, secret_access_key, description, created_at, enabled)
+			VALUES (?, ?, ?, ?, 1)`,
+			accessKeyID, encryptedSecret, description, createdAt,
+		)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +170,7 @@ func (m *MetadataStore) CreateAPIKey(description string) (*APIKey, error) {
 		AccessKeyID:     accessKeyID,
 		SecretAccessKey: secretAccessKey, // 返回明文给用户
 		Description:     description,
-		CreatedAt:       time.Now().UTC(),
+		CreatedAt:       createdAt,
 		Enabled:         true,
 	}, nil
 }
@@ -207,58 +211,83 @@ func (m *MetadataStore) ListAPIKeys() ([]APIKey, error) {
 
 // ListAPIKeysWithPermissions 列出所有API密钥及其权限（内部使用，包含SecretKey，自动解密）
 func (m *MetadataStore) ListAPIKeysWithPermissions() ([]APIKeyWithPermissions, error) {
-	rows, err := m.db.Query(`
+	// 使用事务确保读取一致性
+	tx, err := m.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`
 		SELECT access_key_id, secret_access_key, description, created_at, enabled
 		FROM api_keys ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	var keys []APIKeyWithPermissions
 	for rows.Next() {
 		var key APIKeyWithPermissions
 		var encryptedSecret string
 		if err := rows.Scan(&key.AccessKeyID, &encryptedSecret, &key.Description, &key.CreatedAt, &key.Enabled); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		// 解密 SecretKey
 		key.SecretAccessKey, err = m.DecryptSecret(encryptedSecret)
 		if err != nil {
+			rows.Close()
 			return nil, err
 		}
 		keys = append(keys, key)
 	}
 	rows.Close()
 
-	// 获取每个密钥的权限
+	// 获取每个密钥的权限（在同一事务中）
 	for i := range keys {
-		perms, err := m.GetAPIKeyPermissions(keys[i].AccessKeyID)
+		permRows, err := tx.Query(`
+			SELECT access_key_id, bucket_name, can_read, can_write
+			FROM api_key_permissions WHERE access_key_id = ?`, keys[i].AccessKeyID)
 		if err != nil {
 			return nil, err
 		}
-		keys[i].Permissions = perms
+		for permRows.Next() {
+			var perm APIKeyPermission
+			if err := permRows.Scan(&perm.AccessKeyID, &perm.BucketName, &perm.CanRead, &perm.CanWrite); err != nil {
+				permRows.Close()
+				return nil, err
+			}
+			keys[i].Permissions = append(keys[i].Permissions, perm)
+		}
+		permRows.Close()
 	}
 
+	// 只读事务，不需要 Commit，Rollback 会自动释放
 	return keys, nil
 }
 
 // DeleteAPIKey 删除API密钥
 func (m *MetadataStore) DeleteAPIKey(accessKeyID string) error {
-	_, err := m.db.Exec("DELETE FROM api_keys WHERE access_key_id = ?", accessKeyID)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec("DELETE FROM api_keys WHERE access_key_id = ?", accessKeyID)
+		return err
+	})
 }
 
 // UpdateAPIKeyEnabled 启用/禁用API密钥
 func (m *MetadataStore) UpdateAPIKeyEnabled(accessKeyID string, enabled bool) error {
-	_, err := m.db.Exec("UPDATE api_keys SET enabled = ? WHERE access_key_id = ?", enabled, accessKeyID)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec("UPDATE api_keys SET enabled = ? WHERE access_key_id = ?", enabled, accessKeyID)
+		return err
+	})
 }
 
 // UpdateAPIKeyDescription 更新API密钥描述
 func (m *MetadataStore) UpdateAPIKeyDescription(accessKeyID, description string) error {
-	_, err := m.db.Exec("UPDATE api_keys SET description = ? WHERE access_key_id = ?", description, accessKeyID)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec("UPDATE api_keys SET description = ? WHERE access_key_id = ?", description, accessKeyID)
+		return err
+	})
 }
 
 // ResetAPIKeySecret 重置API密钥的SecretKey（加密存储）
@@ -271,11 +300,18 @@ func (m *MetadataStore) ResetAPIKeySecret(accessKeyID string) (string, error) {
 		return "", err
 	}
 
-	result, err := m.db.Exec("UPDATE api_keys SET secret_access_key = ? WHERE access_key_id = ?", encryptedSecret, accessKeyID)
+	var rows int64
+	err = m.withWriteLock(func() error {
+		result, err := m.db.Exec("UPDATE api_keys SET secret_access_key = ? WHERE access_key_id = ?", encryptedSecret, accessKeyID)
+		if err != nil {
+			return err
+		}
+		rows, _ = result.RowsAffected()
+		return nil
+	})
 	if err != nil {
 		return "", err
 	}
-	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		return "", sql.ErrNoRows
 	}
@@ -286,21 +322,25 @@ func (m *MetadataStore) ResetAPIKeySecret(accessKeyID string) (string, error) {
 
 // SetAPIKeyPermission 设置API密钥的桶权限
 func (m *MetadataStore) SetAPIKeyPermission(perm *APIKeyPermission) error {
-	_, err := m.db.Exec(`
-		INSERT OR REPLACE INTO api_key_permissions (access_key_id, bucket_name, can_read, can_write)
-		VALUES (?, ?, ?, ?)`,
-		perm.AccessKeyID, perm.BucketName, perm.CanRead, perm.CanWrite,
-	)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec(`
+			INSERT OR REPLACE INTO api_key_permissions (access_key_id, bucket_name, can_read, can_write)
+			VALUES (?, ?, ?, ?)`,
+			perm.AccessKeyID, perm.BucketName, perm.CanRead, perm.CanWrite,
+		)
+		return err
+	})
 }
 
 // DeleteAPIKeyPermission 删除API密钥的桶权限
 func (m *MetadataStore) DeleteAPIKeyPermission(accessKeyID, bucketName string) error {
-	_, err := m.db.Exec(
-		"DELETE FROM api_key_permissions WHERE access_key_id = ? AND bucket_name = ?",
-		accessKeyID, bucketName,
-	)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec(
+			"DELETE FROM api_key_permissions WHERE access_key_id = ? AND bucket_name = ?",
+			accessKeyID, bucketName,
+		)
+		return err
+	})
 }
 
 // GetAPIKeyPermissions 获取API密钥的所有权限

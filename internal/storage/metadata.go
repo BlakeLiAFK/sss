@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -11,7 +12,8 @@ import (
 
 // MetadataStore SQLite元数据存储
 type MetadataStore struct {
-	db *sql.DB
+	db    *sql.DB
+	wmu   sync.Mutex // 写操作互斥锁，确保写入串行化
 }
 
 // NewMetadataStore 创建元数据存储
@@ -22,9 +24,11 @@ func NewMetadataStore(dbPath string) (*MetadataStore, error) {
 		return nil, err
 	}
 
-	// 设置连接池参数
-	db.SetMaxOpenConns(25)   // 最大打开连接数
-	db.SetMaxIdleConns(5)    // 最大空闲连接数
+	// 设置连接池参数（SQLite + WAL 模式优化）
+	// WAL 模式允许：多个读取者 + 一个写入者 同时工作
+	// 写操作通过应用层 wmu 互斥锁串行化
+	db.SetMaxOpenConns(10)   // 允许多个并发读取
+	db.SetMaxIdleConns(5)    // 保持空闲连接
 	db.SetConnMaxLifetime(0) // 连接不过期
 	db.SetConnMaxIdleTime(0) // 空闲连接不过期
 
@@ -144,26 +148,51 @@ func (m *MetadataStore) Close() error {
 	return m.db.Close()
 }
 
+// withWriteLock 执行写操作（带互斥锁）
+func (m *MetadataStore) withWriteLock(fn func() error) error {
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
+	return fn()
+}
+
 // === Bucket 操作 ===
 
 func (m *MetadataStore) CreateBucket(name string) error {
-	_, err := m.db.Exec(
-		"INSERT INTO buckets (name, creation_date, is_public) VALUES (?, ?, ?)",
-		name, time.Now().UTC(), 0, // 默认私有
-	)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec(
+			"INSERT INTO buckets (name, creation_date, is_public) VALUES (?, ?, ?)",
+			name, time.Now().UTC(), 0,
+		)
+		return err
+	})
 }
 
 func (m *MetadataStore) DeleteBucket(name string) error {
+	m.wmu.Lock()
+	defer m.wmu.Unlock()
+
+	// 使用事务确保检查和删除的原子性
+	tx, err := m.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
 	// 检查是否有对象
 	var count int
-	m.db.QueryRow("SELECT COUNT(*) FROM objects WHERE bucket = ?", name).Scan(&count)
+	if err := tx.QueryRow("SELECT COUNT(*) FROM objects WHERE bucket = ?", name).Scan(&count); err != nil {
+		return err
+	}
 	if count > 0 {
 		return fmt.Errorf("bucket not empty")
 	}
 
-	_, err := m.db.Exec("DELETE FROM buckets WHERE name = ?", name)
-	return err
+	// 删除桶
+	if _, err := tx.Exec("DELETE FROM buckets WHERE name = ?", name); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (m *MetadataStore) GetBucket(name string) (*Bucket, error) {
@@ -197,22 +226,26 @@ func (m *MetadataStore) ListBuckets() ([]Bucket, error) {
 
 // UpdateBucketPublic 设置桶的公有/私有状态
 func (m *MetadataStore) UpdateBucketPublic(name string, isPublic bool) error {
-	_, err := m.db.Exec(
-		"UPDATE buckets SET is_public = ? WHERE name = ?",
-		isPublic, name,
-	)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec(
+			"UPDATE buckets SET is_public = ? WHERE name = ?",
+			isPublic, name,
+		)
+		return err
+	})
 }
 
 // === Object 操作 ===
 
 func (m *MetadataStore) PutObject(obj *Object) error {
-	_, err := m.db.Exec(`
-		INSERT OR REPLACE INTO objects (bucket, key, size, etag, content_type, last_modified, storage_path)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		obj.Bucket, obj.Key, obj.Size, obj.ETag, obj.ContentType, obj.LastModified, obj.StoragePath,
-	)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec(`
+			INSERT OR REPLACE INTO objects (bucket, key, size, etag, content_type, last_modified, storage_path)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			obj.Bucket, obj.Key, obj.Size, obj.ETag, obj.ContentType, obj.LastModified, obj.StoragePath,
+		)
+		return err
+	})
 }
 
 func (m *MetadataStore) GetObject(bucket, key string) (*Object, error) {
@@ -229,8 +262,10 @@ func (m *MetadataStore) GetObject(bucket, key string) (*Object, error) {
 }
 
 func (m *MetadataStore) DeleteObject(bucket, key string) error {
-	_, err := m.db.Exec("DELETE FROM objects WHERE bucket = ? AND key = ?", bucket, key)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec("DELETE FROM objects WHERE bucket = ? AND key = ?", bucket, key)
+		return err
+	})
 }
 
 func (m *MetadataStore) ListObjects(bucket, prefix, marker, delimiter string, maxKeys int) (*ListObjectsResult, error) {
@@ -301,12 +336,14 @@ func (m *MetadataStore) ListObjects(bucket, prefix, marker, delimiter string, ma
 // === Multipart Upload 操作 ===
 
 func (m *MetadataStore) CreateMultipartUpload(upload *MultipartUpload) error {
-	_, err := m.db.Exec(`
-		INSERT INTO multipart_uploads (upload_id, bucket, key, initiated, content_type)
-		VALUES (?, ?, ?, ?, ?)`,
-		upload.UploadID, upload.Bucket, upload.Key, upload.Initiated, upload.ContentType,
-	)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec(`
+			INSERT INTO multipart_uploads (upload_id, bucket, key, initiated, content_type)
+			VALUES (?, ?, ?, ?, ?)`,
+			upload.UploadID, upload.Bucket, upload.Key, upload.Initiated, upload.ContentType,
+		)
+		return err
+	})
 }
 
 func (m *MetadataStore) GetMultipartUpload(uploadID string) (*MultipartUpload, error) {
@@ -322,17 +359,21 @@ func (m *MetadataStore) GetMultipartUpload(uploadID string) (*MultipartUpload, e
 }
 
 func (m *MetadataStore) DeleteMultipartUpload(uploadID string) error {
-	_, err := m.db.Exec("DELETE FROM multipart_uploads WHERE upload_id = ?", uploadID)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec("DELETE FROM multipart_uploads WHERE upload_id = ?", uploadID)
+		return err
+	})
 }
 
 func (m *MetadataStore) PutPart(part *Part) error {
-	_, err := m.db.Exec(`
-		INSERT OR REPLACE INTO parts (upload_id, part_number, size, etag, modified_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		part.UploadID, part.PartNumber, part.Size, part.ETag, part.ModifiedAt,
-	)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec(`
+			INSERT OR REPLACE INTO parts (upload_id, part_number, size, etag, modified_at)
+			VALUES (?, ?, ?, ?, ?)`,
+			part.UploadID, part.PartNumber, part.Size, part.ETag, part.ModifiedAt,
+		)
+		return err
+	})
 }
 
 func (m *MetadataStore) ListParts(uploadID string) ([]Part, error) {
@@ -357,8 +398,10 @@ func (m *MetadataStore) ListParts(uploadID string) ([]Part, error) {
 }
 
 func (m *MetadataStore) DeleteParts(uploadID string) error {
-	_, err := m.db.Exec("DELETE FROM parts WHERE upload_id = ?", uploadID)
-	return err
+	return m.withWriteLock(func() error {
+		_, err := m.db.Exec("DELETE FROM parts WHERE upload_id = ?", uploadID)
+		return err
+	})
 }
 
 // escapeLikePattern 转义LIKE模式中的特殊字符
