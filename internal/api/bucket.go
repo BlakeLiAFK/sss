@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"sss/internal/config"
@@ -64,20 +65,14 @@ func (s *Server) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateBucket 创建存储桶
 func (s *Server) handleCreateBucket(w http.ResponseWriter, r *http.Request, bucket string) {
-	// 检查是否已存在
-	existing, err := s.metadata.GetBucket(bucket)
-	if err != nil {
-		utils.Error("check bucket failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+bucket)
-		return
-	}
-	if existing != nil {
-		utils.WriteError(w, utils.ErrBucketAlreadyExists, http.StatusConflict, "/"+bucket)
-		return
-	}
-
-	// 创建元数据
+	// 直接尝试创建，依赖数据库 PRIMARY KEY 约束处理冲突
 	if err := s.metadata.CreateBucket(bucket); err != nil {
+		// 检查是否是重复键错误（桶已存在）
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") ||
+			strings.Contains(err.Error(), "PRIMARY KEY") {
+			utils.WriteError(w, utils.ErrBucketAlreadyExists, http.StatusConflict, "/"+bucket)
+			return
+		}
 		utils.Error("create bucket metadata failed", "error", err)
 		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+bucket)
 		return
