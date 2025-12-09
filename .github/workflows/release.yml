@@ -18,36 +18,24 @@ env:
 jobs:
   build:
     name: Build ${{ matrix.os }}-${{ matrix.arch }}
-    # 动态选择运行环境：macOS 使用 macos-latest，其他使用 ubuntu-latest
-    runs-on: ${{ matrix.os == 'darwin' && 'macos-latest' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          # --- Linux (Host: Ubuntu) ---
           - os: linux
             arch: amd64
-            cc: gcc
           - os: linux
             arch: arm64
-            cc: aarch64-linux-gnu-gcc # 需要安装交叉编译器
-            pkg: gcc-aarch64-linux-gnu libc6-dev-arm64-cross
-
-          # --- Windows (Host: Ubuntu via MinGW) ---
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
           - os: windows
             arch: amd64
             ext: '.exe'
-            cc: x86_64-w64-mingw32-gcc # 需要安装 MinGW
-            pkg: gcc-mingw-w64
-
-          # --- macOS (Host: macOS Native) ---
-          # macOS 下 clang 既支持 amd64 也支持 arm64，原生支持交叉编译
-          - os: darwin
+          - os: freebsd
             arch: amd64
-            cc: clang
-          - os: darwin
-            arch: arm64
-            cc: clang
 
     steps:
       - name: Checkout code
@@ -66,13 +54,6 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      # 安装 Linux 下需要的交叉编译工具 (仅当运行在 ubuntu 且需要交叉编译时)
-      - name: Install Cross-Compilers (Ubuntu)
-        if: runner.os == 'Linux' && matrix.pkg != ''
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ${{ matrix.pkg }}
-
       - name: Build Frontend
         run: |
           cd web
@@ -87,16 +68,13 @@ jobs:
         env:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
-          # 重点：开启 CGO
-          CGO_ENABLED: 1
-          # 重点：指定对应的 C 编译器
-          CC: ${{ matrix.cc }} 
+          CGO_ENABLED: 0  # 禁用 CGO，使用纯 Go SQLite
         run: |
           VERSION="${{ github.event.inputs.version || github.ref_name }}"
           OUTPUT_NAME="sss-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
-          
-          echo "Building for $GOOS/$GOARCH with CC=$CC"
-          
+
+          echo "Building for $GOOS/$GOARCH"
+
           go build -tags embed -ldflags="-s -w -X main.Version=${VERSION}" -o ${OUTPUT_NAME} ./cmd/server
           echo "Built ${OUTPUT_NAME}"
 
@@ -150,8 +128,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # CI Build 仅做简单的构建检查 (CGO 开启)
-  # 这里为了简化 CI，只检查最基础的 Linux amd64
+  # CI Build - 快速检查
   ci-build:
     name: CI Build Check
     runs-on: ubuntu-latest
@@ -165,18 +142,17 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      
+
       - name: Build Frontend
         run: |
           cd web
           npm ci
           npm run build:fast
 
-      - name: Build Check (Linux amd64 with CGO)
+      - name: Build Check
         env:
-          CGO_ENABLED: 1
+          CGO_ENABLED: 0
         run: |
-          # 需要先清理/准备静态文件目录，否则 build -tags embed 可能报错
           rm -rf internal/api/static
           mkdir -p internal/api/static
           cp -r data/static/* internal/api/static/

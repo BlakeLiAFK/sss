@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 // MetadataStore SQLite元数据存储
@@ -18,8 +18,9 @@ type MetadataStore struct {
 
 // NewMetadataStore 创建元数据存储
 func NewMetadataStore(dbPath string) (*MetadataStore, error) {
+	// modernc.org/sqlite 使用不同的参数格式
 	// 使用 WAL 模式提升并发性能，设置 busy_timeout 避免锁等待
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL&_cache_size=2000")
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_pragma=cache_size(2000)")
 	if err != nil {
 		return nil, err
 	}
