@@ -364,6 +364,28 @@ export function getObjectUrl(bucket: string, key: string): string {
   return `${getBaseUrl()}/${bucket}/${key}`
 }
 
+// 系统设置
+export interface SystemSettings {
+  region: string
+  max_object_size: number
+  max_presign_upload_size: number
+  cors_origin: string
+  presign_scheme: string
+  listen_addr: string
+  data_dir: string
+  db_path: string
+  version: string
+  installed_at: string
+}
+
+// 获取系统设置
+export async function getSettings(): Promise<SystemSettings> {
+  const resp = await axios.get(`${getBaseUrl()}/api/admin/settings`, {
+    headers: getAdminHeaders()
+  })
+  return resp.data
+}
+
 // 预签名URL选项
 interface PresignOptions {
   method?: string

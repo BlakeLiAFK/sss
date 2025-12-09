@@ -2,17 +2,17 @@
   <div class="page-container">
     <div class="page-header">
       <div class="page-title">
-        <h1>存储桶</h1>
-        <p class="page-subtitle">管理存储桶</p>
+        <h1>{{ t('buckets.title') }}</h1>
+        <p class="page-subtitle">{{ t('buckets.subtitle') }}</p>
       </div>
       <div class="page-actions">
         <el-button @click="handleRefresh" :loading="loading" class="action-btn">
           <el-icon><Refresh /></el-icon>
-          <span class="btn-text">刷新</span>
+          <span class="btn-text">{{ t('common.refresh') }}</span>
         </el-button>
         <el-button type="primary" @click="showCreateDialog = true" class="primary-btn">
           <el-icon><Plus /></el-icon>
-          <span class="btn-text">新建</span>
+          <span class="btn-text">{{ t('buckets.createBucket') }}</span>
         </el-button>
       </div>
     </div>
@@ -29,15 +29,15 @@
             <div class="bucket-date">{{ formatDate(bucket.creation_date) }}</div>
           </div>
           <el-tag :type="bucket.is_public ? 'warning' : 'info'" size="small">
-            {{ bucket.is_public ? '公开' : '私有' }}
+            {{ bucket.is_public ? t('buckets.public') : t('buckets.private') }}
           </el-tag>
         </div>
         <div class="bucket-card-actions">
           <el-button size="small" @click.stop="handleTogglePublic(bucket.name, !bucket.is_public)">
-            {{ bucket.is_public ? '设为私有' : '设为公开' }}
+            {{ bucket.is_public ? t('buckets.setPrivate') : t('buckets.setPublic') }}
           </el-button>
           <el-button size="small" type="danger" @click.stop="handleDelete(bucket.name)">
-            删除
+            {{ t('common.delete') }}
           </el-button>
         </div>
       </div>
@@ -47,7 +47,7 @@
     <div class="content-card desktop-table">
       <div class="table-wrapper">
         <el-table :data="buckets" v-loading="loading" class="data-table">
-          <el-table-column prop="name" label="存储桶名称" min-width="180">
+          <el-table-column prop="name" :label="t('buckets.bucketName')" min-width="180">
             <template #default="{ row }">
               <router-link :to="{ name: 'Objects', params: { name: row.name } }" class="bucket-link">
                 <div class="bucket-icon-sm">
@@ -57,12 +57,12 @@
               </router-link>
             </template>
           </el-table-column>
-          <el-table-column prop="creation_date" label="创建时间" width="160">
+          <el-table-column prop="creation_date" :label="t('buckets.createdAt')" width="160">
             <template #default="{ row }">
               <span class="date-text">{{ formatDate(row.creation_date) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="访问" width="100" align="center">
+          <el-table-column :label="t('buckets.access')" width="100" align="center">
             <template #default="{ row }">
               <el-tag
                 :type="row.is_public ? 'warning' : 'info'"
@@ -70,11 +70,11 @@
                 class="access-tag"
                 @click="handleTogglePublic(row.name, !row.is_public)"
               >
-                {{ row.is_public ? '公开' : '私有' }}
+                {{ row.is_public ? t('buckets.public') : t('buckets.private') }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="100" align="center">
+          <el-table-column :label="t('common.actions')" width="100" align="center">
             <template #default="{ row }">
               <el-button type="danger" text size="small" @click="handleDelete(row.name)">
                 <el-icon><Delete /></el-icon>
@@ -84,33 +84,33 @@
         </el-table>
       </div>
 
-      <el-empty v-if="!loading && buckets.length === 0" description="暂无存储桶">
+      <el-empty v-if="!loading && buckets.length === 0" :description="t('buckets.noBuckets')">
         <el-button type="primary" @click="showCreateDialog = true">
-          创建第一个存储桶
+          {{ t('buckets.createFirst') }}
         </el-button>
       </el-empty>
     </div>
 
     <el-dialog
       v-model="showCreateDialog"
-      title="创建存储桶"
+      :title="t('buckets.createBucketTitle')"
       :width="dialogWidth"
       :close-on-click-modal="false"
     >
       <el-form :model="createForm" label-position="top">
-        <el-form-item label="存储桶名称">
+        <el-form-item :label="t('buckets.bucketName')">
           <el-input
             v-model="createForm.name"
-            placeholder="请输入存储桶名称（小写字母、数字、连字符）"
+            :placeholder="t('buckets.bucketNamePlaceholder')"
             @keyup.enter="handleCreate"
           />
-          <div class="form-hint">仅支持小写字母、数字和连字符</div>
+          <div class="form-hint">{{ t('buckets.bucketNameHint') }}</div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showCreateDialog = false">取消</el-button>
+        <el-button @click="showCreateDialog = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="handleCreate" :loading="creating" class="primary-btn">
-          创建
+          {{ t('common.create') }}
         </el-button>
       </template>
     </el-dialog>
@@ -120,10 +120,13 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Plus, Folder, Delete } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import axios from 'axios'
+
+const { t } = useI18n()
 
 interface Bucket {
   name: string
@@ -140,7 +143,6 @@ const showCreateDialog = ref(false)
 const creating = ref(false)
 const createForm = reactive({ name: '' })
 
-// 响应式对话框宽度
 const dialogWidth = computed(() => window.innerWidth < 500 ? '90%' : '420px')
 
 function getHeaders() {
@@ -161,7 +163,7 @@ async function loadBuckets() {
     })
     buckets.value = response.data || []
   } catch (e: any) {
-    ElMessage.error('Failed to load buckets: ' + e.message)
+    ElMessage.error(t('buckets.loadFailed') + ': ' + e.message)
   } finally {
     loading.value = false
   }
@@ -170,7 +172,7 @@ async function loadBuckets() {
 async function handleCreate() {
   const name = createForm.name.trim().toLowerCase()
   if (!name) {
-    ElMessage.warning('Please enter a bucket name')
+    ElMessage.warning(t('buckets.pleaseEnterName'))
     return
   }
   creating.value = true
@@ -180,12 +182,12 @@ async function handleCreate() {
     }, {
       headers: getHeaders()
     })
-    ElMessage.success('Bucket created successfully')
+    ElMessage.success(t('buckets.createSuccess'))
     showCreateDialog.value = false
     createForm.name = ''
     await loadBuckets()
   } catch (e: any) {
-    ElMessage.error('Failed to create bucket: ' + (e.response?.data?.Message || e.message))
+    ElMessage.error(t('buckets.createFailed') + ': ' + (e.response?.data?.Message || e.message))
   } finally {
     creating.value = false
   }
@@ -194,22 +196,22 @@ async function handleCreate() {
 async function handleDelete(name: string) {
   try {
     await ElMessageBox.confirm(
-      `Are you sure you want to delete bucket "${name}"? This action cannot be undone.`,
-      'Delete Bucket',
+      t('buckets.deleteConfirm', { name }),
+      t('buckets.deleteBucket'),
       {
         type: 'warning',
-        confirmButtonText: 'Delete',
+        confirmButtonText: t('common.delete'),
         confirmButtonClass: 'el-button--danger'
       }
     )
     await axios.delete(`${auth.endpoint}/api/admin/buckets/${name}`, {
       headers: getHeaders()
     })
-    ElMessage.success('Bucket deleted successfully')
+    ElMessage.success(t('buckets.deleteSuccess'))
     await loadBuckets()
   } catch (e: any) {
     if (e !== 'cancel') {
-      ElMessage.error('Failed to delete bucket: ' + (e.response?.data?.Message || e.message))
+      ElMessage.error(t('buckets.deleteFailed') + ': ' + (e.response?.data?.Message || e.message))
     }
   }
 }
@@ -229,9 +231,9 @@ async function handleTogglePublic(bucketName: string, isPublic: boolean) {
     if (bucket) {
       bucket.is_public = isPublic
     }
-    ElMessage.success(`Bucket is now ${isPublic ? 'public' : 'private'}`)
+    ElMessage.success(isPublic ? t('buckets.nowPublic') : t('buckets.nowPrivate'))
   } catch (e: any) {
-    ElMessage.error('Failed to update access: ' + (e.response?.data?.Message || e.message))
+    ElMessage.error(t('buckets.updateAccessFailed') + ': ' + (e.response?.data?.Message || e.message))
   } finally {
     if (bucket) {
       bucket.toggling = false
@@ -296,7 +298,6 @@ function formatDate(dateStr: string): string {
   border-color: #d35400;
 }
 
-/* 移动端卡片视图 */
 .mobile-cards {
   display: none;
 }
@@ -354,7 +355,6 @@ function formatDate(dateStr: string): string {
   border-top: 1px solid #f0f0f0;
 }
 
-/* 桌面端表格视图 */
 .content-card {
   background: #fff;
   border-radius: 10px;
@@ -408,7 +408,6 @@ function formatDate(dateStr: string): string {
   margin-top: 6px;
 }
 
-/* 移动端响应式 */
 @media (max-width: 768px) {
   .page-header {
     flex-direction: column;

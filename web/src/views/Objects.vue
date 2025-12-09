@@ -11,8 +11,8 @@
       <div v-if="isDragging" class="drop-overlay">
         <div class="drop-content">
           <el-icon :size="64"><Upload /></el-icon>
-          <h3>Drop files here to upload</h3>
-          <p>Files and folders supported</p>
+          <h3>{{ t('objects.dropFilesHere') }}</h3>
+          <p>{{ t('objects.filesAndFoldersSupported') }}</p>
         </div>
       </div>
     </Transition>
@@ -20,17 +20,17 @@
     <div class="page-header">
       <div class="page-title">
         <div class="breadcrumb">
-          <router-link to="/buckets" class="breadcrumb-link">Buckets</router-link>
+          <router-link to="/buckets" class="breadcrumb-link">{{ t('objects.buckets') }}</router-link>
           <el-icon class="breadcrumb-separator"><ArrowRight /></el-icon>
           <span class="breadcrumb-current">{{ bucketName }}</span>
           <span v-if="prefix" class="breadcrumb-prefix">/ {{ prefix }}</span>
         </div>
-        <p class="page-subtitle">Browse and manage files</p>
+        <p class="page-subtitle">{{ t('objects.subtitle') }}</p>
       </div>
       <div class="page-actions">
         <el-input
           v-model="searchKeyword"
-          placeholder="Search files..."
+          :placeholder="t('objects.searchPlaceholder')"
           clearable
           class="search-input"
           @input="handleSearchInput"
@@ -48,7 +48,7 @@
         >
           <el-button type="primary" class="primary-btn">
             <el-icon><Upload /></el-icon>
-            Upload
+            {{ t('objects.upload') }}
           </el-button>
         </el-upload>
       </div>
@@ -58,29 +58,29 @@
     <div v-if="isSearchMode" class="search-info">
       <el-tag type="info" effect="plain" size="small">
         <el-icon><Search /></el-icon>
-        Found {{ searchCount }} results for "{{ searchKeyword }}"
+        {{ t('objects.foundResults', { count: searchCount, keyword: searchKeyword }) }}
       </el-tag>
-      <el-button text type="primary" size="small" @click="handleSearchClear">Clear search</el-button>
+      <el-button text type="primary" size="small" @click="handleSearchClear">{{ t('objects.clearSearch') }}</el-button>
     </div>
 
     <!-- Batch Action Toolbar -->
     <div v-if="selectedRows.length > 0" class="batch-toolbar">
       <div class="batch-info">
         <el-tag type="primary" effect="light">
-          {{ selectedRows.length }} selected
+          {{ t('objects.selected', { count: selectedRows.length }) }}
         </el-tag>
       </div>
       <div class="batch-actions">
         <el-button type="primary" plain size="small" @click="handleBatchDownload" :loading="batchDownloading">
           <el-icon><Download /></el-icon>
-          Download as ZIP
+          {{ t('objects.downloadAsZip') }}
         </el-button>
         <el-button type="danger" plain size="small" @click="handleBatchDelete">
           <el-icon><Delete /></el-icon>
-          Delete Selected
+          {{ t('objects.deleteSelected') }}
         </el-button>
         <el-button text size="small" @click="clearSelection">
-          Clear
+          {{ t('objects.clear') }}
         </el-button>
       </div>
     </div>
@@ -96,7 +96,7 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="55" />
-        <el-table-column prop="key" label="Name" min-width="300">
+        <el-table-column prop="key" :label="t('objects.name')" min-width="300">
           <template #default="{ row }">
             <div class="file-cell">
               <div class="file-icon">
@@ -106,25 +106,25 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="size" label="Size" width="120">
+        <el-table-column prop="size" :label="t('objects.size')" width="120">
           <template #default="{ row }">
             <span class="size-text">{{ formatSize(row.size) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="last_modified" label="Modified" width="180">
+        <el-table-column prop="last_modified" :label="t('objects.modified')" width="180">
           <template #default="{ row }">
             <span class="date-text">{{ formatDate(row.last_modified) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="Actions" width="320" align="center">
+        <el-table-column :label="t('objects.actions')" width="320" align="center">
           <template #default="{ row }">
             <el-button size="small" text @click="handlePreview(row)">
               <el-icon><View /></el-icon>
-              Preview
+              {{ t('objects.preview') }}
             </el-button>
             <el-button size="small" text @click="handleDownload(row.key)">
               <el-icon><Download /></el-icon>
-              Download
+              {{ t('objects.download') }}
             </el-button>
             <el-button size="small" text @click="handleCopyLink(row.key)">
               <el-icon><Link /></el-icon>
@@ -139,33 +139,33 @@
         </el-table-column>
       </el-table>
 
-      <el-empty v-if="!loading && displayObjects.length === 0" description="No files yet">
+      <el-empty v-if="!loading && displayObjects.length === 0" :description="t('objects.noFiles')">
         <el-upload
           :show-file-list="false"
           :before-upload="handleUpload"
           :accept="'*/*'"
           multiple
         >
-          <el-button type="primary" class="primary-btn">Upload your first file</el-button>
+          <el-button type="primary" class="primary-btn">{{ t('objects.uploadFirstFile') }}</el-button>
         </el-upload>
       </el-empty>
 
       <div class="pagination" v-if="isTruncated && !isSearchMode">
-        <el-button @click="loadMore">Load More</el-button>
+        <el-button @click="loadMore">{{ t('objects.loadMore') }}</el-button>
       </div>
     </div>
 
     <!-- Upload Settings Dialog -->
     <el-dialog
       v-model="uploadSettingVisible"
-      title="Upload Files"
+      :title="t('objects.uploadFiles')"
       width="600px"
       :close-on-click-modal="false"
     >
       <div class="upload-settings">
         <el-alert type="info" :closable="false" class="upload-tip">
           <template #title>
-            Specify the full target path for each file
+            {{ t('objects.specifyTargetPath') }}
           </template>
         </el-alert>
         <div class="file-list">
@@ -180,7 +180,7 @@
             </div>
             <el-input
               v-model="item.targetPath"
-              placeholder="e.g., images/2024/photo.jpg"
+              :placeholder="t('objects.targetPathPlaceholder')"
               class="file-path-input"
             >
               <template #prepend>/</template>
@@ -189,9 +189,9 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="cancelUpload">Cancel</el-button>
+        <el-button @click="cancelUpload">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" class="primary-btn" @click="startUpload" :disabled="pendingFilesWithPath.length === 0">
-          Upload {{ pendingFilesWithPath.length }} file(s)
+          {{ t('objects.uploadCount', { count: pendingFilesWithPath.length }) }}
         </el-button>
       </template>
     </el-dialog>
@@ -199,7 +199,7 @@
     <!-- Upload Progress Dialog -->
     <el-dialog
       v-model="uploadDialogVisible"
-      title="Upload Progress"
+      :title="t('objects.uploadProgress')"
       :close-on-click-modal="false"
       width="500px"
     >
@@ -212,31 +212,31 @@
     <!-- Rename Dialog -->
     <el-dialog
       v-model="renameDialogVisible"
-      title="Rename / Move File"
+      :title="t('objects.renameMove')"
       width="500px"
       :close-on-click-modal="false"
     >
       <el-form label-position="top">
-        <el-form-item label="Current Path">
+        <el-form-item :label="t('objects.currentPath')">
           <el-input :model-value="renameOldKey" disabled />
         </el-form-item>
-        <el-form-item label="New Path">
-          <el-input v-model="renameNewKey" placeholder="Enter new path">
+        <el-form-item :label="t('objects.newPath')">
+          <el-input v-model="renameNewKey" :placeholder="t('objects.enterNewPath')">
             <template #prepend>/</template>
           </el-input>
-          <div class="form-hint">Change the path to move the file to a different directory</div>
+          <div class="form-hint">{{ t('objects.changePathHint') }}</div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="renameDialogVisible = false">Cancel</el-button>
-        <el-button type="primary" class="primary-btn" @click="confirmRename" :loading="renaming">Confirm</el-button>
+        <el-button @click="renameDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" class="primary-btn" @click="confirmRename" :loading="renaming">{{ t('common.confirm') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- Preview Dialog -->
     <el-dialog
       v-model="previewDialogVisible"
-      :title="'Preview: ' + previewKey"
+      :title="t('objects.previewTitle', { name: previewKey })"
       width="80%"
       :close-on-click-modal="true"
       class="preview-dialog"
@@ -251,7 +251,7 @@
         <!-- 视频预览 -->
         <div v-else-if="previewType === 'video'" class="preview-video-wrapper">
           <video :src="previewUrl" controls class="preview-video">
-            Your browser does not support video playback.
+            {{ t('objects.browserNoVideoSupport') }}
           </video>
         </div>
 
@@ -262,7 +262,7 @@
           </div>
           <div class="audio-filename">{{ previewKey }}</div>
           <audio :src="previewUrl" controls class="preview-audio">
-            Your browser does not support audio playback.
+            {{ t('objects.browserNoAudioSupport') }}
           </audio>
         </div>
 
@@ -279,15 +279,15 @@
         <!-- 不支持的格式 -->
         <div v-else class="preview-unsupported">
           <el-icon :size="64" color="#94a3b8"><Document /></el-icon>
-          <h3>Preview not available</h3>
-          <p>This file type cannot be previewed.</p>
+          <h3>{{ t('objects.previewNotAvailable') }}</h3>
+          <p>{{ t('objects.fileTypeCannotPreview') }}</p>
           <p class="file-info">
-            <strong>File:</strong> {{ previewKey }}<br />
-            <strong>Size:</strong> {{ formatSize(previewSize) }}
+            <strong>{{ t('objects.file') }}:</strong> {{ previewKey }}<br />
+            <strong>{{ t('objects.size') }}:</strong> {{ formatSize(previewSize) }}
           </p>
           <el-button type="primary" class="primary-btn" @click="handleDownload(previewKey)">
             <el-icon><Download /></el-icon>
-            Download File
+            {{ t('objects.downloadFile') }}
           </el-button>
         </div>
       </div>
@@ -297,11 +297,11 @@
           <div class="preview-actions">
             <el-button @click="handleCopyLink(previewKey)">
               <el-icon><Link /></el-icon>
-              Copy Link
+              {{ t('objects.copyLink') }}
             </el-button>
             <el-button type="primary" class="primary-btn" @click="handleDownload(previewKey)">
               <el-icon><Download /></el-icon>
-              Download
+              {{ t('objects.download') }}
             </el-button>
           </div>
         </div>
@@ -313,10 +313,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
 import { ArrowRight, Upload, Document, Delete, Search, Download, Link, Edit, Close, View } from '@element-plus/icons-vue'
 import { listObjects, deleteObject, getObjectUrl, uploadObject, generatePresignedUrl, getBucketPublic, copyObject, searchObjects, batchDeleteObjects, batchDownloadObjects, type S3Object } from '../api/admin'
 
+const { t } = useI18n()
 const route = useRoute()
 
 const bucketName = computed(() => route.params.name as string)
@@ -359,7 +361,7 @@ const batchDownloading = ref(false)
 
 // Drag and drop related
 const isDragging = ref(false)
-let dragCounter = 0  // 用于处理子元素的dragenter/dragleave
+let dragCounter = 0
 
 // Preview related
 const previewDialogVisible = ref(false)
@@ -367,9 +369,9 @@ const previewLoading = ref(false)
 const previewUrl = ref('')
 const previewKey = ref('')
 const previewType = ref<'image' | 'video' | 'audio' | 'text' | 'pdf' | 'unsupported'>('unsupported')
-const previewContent = ref('')  // 文本内容预览
+const previewContent = ref('')
 const previewSize = ref(0)
-const MAX_TEXT_PREVIEW_SIZE = 512 * 1024  // 512KB 文本预览大小限制
+const MAX_TEXT_PREVIEW_SIZE = 512 * 1024
 
 onMounted(() => {
   loadObjects()
@@ -410,7 +412,7 @@ function handleSearchInput() {
       searchResults.value = result.objects
       searchCount.value = result.count
     } catch (e: any) {
-      ElMessage.error('Search failed: ' + e.message)
+      ElMessage.error(t('objects.searchFailed') + ': ' + e.message)
     } finally {
       loading.value = false
     }
@@ -439,7 +441,7 @@ async function loadObjects(append = false) {
     isTruncated.value = result.is_truncated
     nextMarker.value = result.next_marker
   } catch (e: any) {
-    ElMessage.error('Failed to load: ' + e.message)
+    ElMessage.error(t('objects.loadFailed') + ': ' + e.message)
   } finally {
     loading.value = false
   }
@@ -469,7 +471,7 @@ async function handleDownload(key: string) {
     }
     window.open(url, '_blank')
   } catch (e: any) {
-    ElMessage.error('Failed to get download link: ' + e.message)
+    ElMessage.error(t('objects.getDownloadLinkFailed') + ': ' + e.message)
   }
 }
 
@@ -487,7 +489,6 @@ async function handleCopyLink(key: string) {
       })
       url = result.url
     }
-    // 兼容 HTTP 环境的剪贴板复制
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(url)
     } else {
@@ -500,25 +501,25 @@ async function handleCopyLink(key: string) {
       document.execCommand('copy')
       document.body.removeChild(textarea)
     }
-    ElMessage.success(isPublic.value ? 'Link copied' : 'Presigned link copied (valid for 1 hour)')
+    ElMessage.success(isPublic.value ? t('objects.linkCopied') : t('objects.presignedLinkCopied'))
   } catch (e: any) {
-    ElMessage.error('Failed to copy link: ' + e.message)
+    ElMessage.error(t('objects.copyLinkFailed') + ': ' + e.message)
   }
 }
 
 async function handleDelete(key: string) {
   try {
     await ElMessageBox.confirm(
-      `Are you sure you want to delete "${key}"?`,
-      'Delete File',
-      { type: 'warning', confirmButtonText: 'Delete', confirmButtonClass: 'el-button--danger' }
+      t('objects.deleteConfirm', { name: key }),
+      t('objects.deleteFile'),
+      { type: 'warning', confirmButtonText: t('common.delete'), confirmButtonClass: 'el-button--danger' }
     )
     await deleteObject(bucketName.value, key)
-    ElMessage.success('Deleted successfully')
+    ElMessage.success(t('objects.deleteSuccess'))
     await loadObjects()
   } catch (e: any) {
     if (e !== 'cancel') {
-      ElMessage.error('Failed to delete: ' + e.message)
+      ElMessage.error(t('objects.deleteFailed') + ': ' + e.message)
     }
   }
 }
@@ -534,12 +535,12 @@ async function confirmRename() {
   const newKey = renameNewKey.value.trim()
 
   if (!newKey) {
-    ElMessage.warning('Please enter a new path')
+    ElMessage.warning(t('objects.pleaseEnterNewPath'))
     return
   }
 
   if (oldKey === newKey) {
-    ElMessage.info('Path unchanged')
+    ElMessage.info(t('objects.pathUnchanged'))
     renameDialogVisible.value = false
     return
   }
@@ -548,9 +549,9 @@ async function confirmRename() {
   if (existingObject) {
     try {
       await ElMessageBox.confirm(
-        `File "${newKey}" already exists. Overwrite?`,
-        'Name Conflict',
-        { confirmButtonText: 'Overwrite', cancelButtonText: 'Cancel', type: 'warning' }
+        t('objects.fileExistsOverwrite', { name: newKey }),
+        t('objects.nameConflict'),
+        { confirmButtonText: t('objects.overwrite'), cancelButtonText: t('common.cancel'), type: 'warning' }
       )
     } catch {
       return
@@ -561,11 +562,11 @@ async function confirmRename() {
   try {
     await copyObject(bucketName.value, oldKey, newKey)
     await deleteObject(bucketName.value, oldKey)
-    ElMessage.success('Renamed successfully')
+    ElMessage.success(t('objects.renameSuccess'))
     renameDialogVisible.value = false
     await loadObjects()
   } catch (e: any) {
-    ElMessage.error('Failed to rename: ' + e.message)
+    ElMessage.error(t('objects.renameFailed') + ': ' + e.message)
   } finally {
     renaming.value = false
   }
@@ -597,7 +598,7 @@ async function startUpload() {
 
   for (const item of pendingFilesWithPath.value) {
     if (!item.targetPath.trim()) {
-      ElMessage.warning('Please specify target path for all files')
+      ElMessage.warning(t('objects.pleaseSpecifyTargetPath'))
       return
     }
   }
@@ -622,7 +623,7 @@ async function startUpload() {
       uploadFiles.value[i].status = 'success'
     } catch (e: any) {
       uploadFiles.value[i].status = 'exception'
-      ElMessage.error(`${targetPath} upload failed: ` + e.message)
+      ElMessage.error(`${targetPath} ${t('objects.uploadFailed')}: ` + e.message)
     }
   }
 
@@ -632,7 +633,7 @@ async function startUpload() {
   const successCount = uploadFiles.value.filter(f => f.status === 'success').length
 
   if (successCount > 0) {
-    ElMessage.success(`Successfully uploaded ${successCount} file(s)`)
+    ElMessage.success(t('objects.uploadSuccessCount', { count: successCount }))
   }
 
   setTimeout(() => {
@@ -641,7 +642,6 @@ async function startUpload() {
   }, hasError ? 3000 : 1500)
 }
 
-// Drag and drop handlers
 function handleDragEnter(e: DragEvent) {
   dragCounter++
   isDragging.value = true
@@ -665,17 +665,14 @@ async function handleDrop(e: DragEvent) {
   const files: PendingFileWithPath[] = []
   const promises: Promise<void>[] = []
 
-  // 处理每个拖入的项目
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     if (item.kind !== 'file') continue
 
-    // 尝试获取 FileSystemEntry（支持文件夹）
     const entry = item.webkitGetAsEntry?.()
     if (entry) {
       promises.push(processEntry(entry, '', files))
     } else {
-      // 回退到普通 File 对象
       const file = item.getAsFile()
       if (file) {
         files.push({ file, targetPath: file.name })
@@ -683,22 +680,19 @@ async function handleDrop(e: DragEvent) {
     }
   }
 
-  // 等待所有文件夹递归完成
   await Promise.all(promises)
 
   if (files.length === 0) {
-    ElMessage.warning('No files found to upload')
+    ElMessage.warning(t('objects.noFilesFound'))
     return
   }
 
-  // 添加到待上传列表并打开设置对话框
   pendingFilesWithPath.value = [...pendingFilesWithPath.value, ...files]
   uploadSettingVisible.value = true
 
-  ElMessage.success(`Added ${files.length} file(s) for upload`)
+  ElMessage.success(t('objects.addedFilesForUpload', { count: files.length }))
 }
 
-// 递归处理 FileSystemEntry
 async function processEntry(entry: FileSystemEntry, basePath: string, files: PendingFileWithPath[]): Promise<void> {
   if (entry.isFile) {
     const fileEntry = entry as FileSystemFileEntry
@@ -707,7 +701,7 @@ async function processEntry(entry: FileSystemEntry, basePath: string, files: Pen
         const targetPath = basePath ? `${basePath}/${entry.name}` : entry.name
         files.push({ file, targetPath })
         resolve()
-      }, () => resolve()) // 忽略错误继续处理其他文件
+      }, () => resolve())
     })
   } else if (entry.isDirectory) {
     const dirEntry = entry as FileSystemDirectoryEntry
@@ -718,22 +712,19 @@ async function processEntry(entry: FileSystemEntry, basePath: string, files: Pen
       const readAllEntries = (allEntries: FileSystemEntry[] = []) => {
         reader.readEntries(async (entries) => {
           if (entries.length === 0) {
-            // 没有更多条目，处理已收集的所有条目
             const subPromises = allEntries.map(e => processEntry(e, dirPath, files))
             await Promise.all(subPromises)
             resolve()
           } else {
-            // 继续读取（readEntries 可能分批返回）
             readAllEntries([...allEntries, ...entries])
           }
-        }, () => resolve()) // 忽略错误继续处理
+        }, () => resolve())
       }
       readAllEntries()
     })
   }
 }
 
-// Batch operation handlers
 function handleSelectionChange(rows: S3Object[]) {
   selectedRows.value = rows
 }
@@ -743,26 +734,26 @@ async function handleBatchDelete() {
 
   try {
     await ElMessageBox.confirm(
-      `Are you sure you want to delete ${selectedRows.value.length} file(s)?`,
-      'Batch Delete',
-      { type: 'warning', confirmButtonText: 'Delete All', confirmButtonClass: 'el-button--danger' }
+      t('objects.batchDeleteConfirm', { count: selectedRows.value.length }),
+      t('objects.batchDelete'),
+      { type: 'warning', confirmButtonText: t('objects.deleteAll'), confirmButtonClass: 'el-button--danger' }
     )
 
     const keys = selectedRows.value.map(row => row.key)
     const result = await batchDeleteObjects(bucketName.value, keys)
 
     if (result.deleted_count > 0) {
-      ElMessage.success(`Deleted ${result.deleted_count} file(s)`)
+      ElMessage.success(t('objects.deletedCount', { count: result.deleted_count }))
     }
     if (result.failed_count > 0) {
-      ElMessage.warning(`Failed to delete ${result.failed_count} file(s)`)
+      ElMessage.warning(t('objects.failedToDeleteCount', { count: result.failed_count }))
     }
 
     clearSelection()
     await loadObjects()
   } catch (e: any) {
     if (e !== 'cancel') {
-      ElMessage.error('Batch delete failed: ' + e.message)
+      ElMessage.error(t('objects.batchDeleteFailed') + ': ' + e.message)
     }
   }
 }
@@ -775,7 +766,6 @@ async function handleBatchDownload() {
     const keys = selectedRows.value.map(row => row.key)
     const blob = await batchDownloadObjects(bucketName.value, keys)
 
-    // 创建下载链接
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -785,9 +775,9 @@ async function handleBatchDownload() {
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
 
-    ElMessage.success(`Downloaded ${keys.length} file(s) as ZIP`)
+    ElMessage.success(t('objects.downloadedAsZip', { count: keys.length }))
   } catch (e: any) {
-    ElMessage.error('Batch download failed: ' + e.message)
+    ElMessage.error(t('objects.batchDownloadFailed') + ': ' + e.message)
   } finally {
     batchDownloading.value = false
   }
@@ -798,26 +788,20 @@ function clearSelection() {
   tableRef.value?.clearSelection()
 }
 
-// Preview handlers
 function getPreviewType(key: string): 'image' | 'video' | 'audio' | 'text' | 'pdf' | 'unsupported' {
   const ext = key.toLowerCase().split('.').pop() || ''
 
-  // 图片格式
   const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico']
   if (imageExts.includes(ext)) return 'image'
 
-  // 视频格式
   const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'm4v']
   if (videoExts.includes(ext)) return 'video'
 
-  // 音频格式
   const audioExts = ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac']
   if (audioExts.includes(ext)) return 'audio'
 
-  // PDF
   if (ext === 'pdf') return 'pdf'
 
-  // 文本/代码格式
   const textExts = ['txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'jsx', 'tsx',
                     'vue', 'go', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'rs', 'rb', 'php',
                     'sh', 'bash', 'yaml', 'yml', 'toml', 'ini', 'conf', 'log', 'csv', 'sql']
@@ -836,7 +820,6 @@ async function handlePreview(row: S3Object) {
   previewLoading.value = true
 
   try {
-    // 获取文件 URL
     let url: string
     if (isPublic.value) {
       url = getObjectUrl(bucketName.value, row.key)
@@ -851,22 +834,20 @@ async function handlePreview(row: S3Object) {
     }
     previewUrl.value = url
 
-    // 对于文本类型，需要获取内容
     if (previewType.value === 'text') {
-      // 文件太大则不加载
       if (row.size > MAX_TEXT_PREVIEW_SIZE) {
-        previewContent.value = `File is too large to preview (${formatSize(row.size)}).\nMaximum preview size: ${formatSize(MAX_TEXT_PREVIEW_SIZE)}\n\nPlease download the file to view its contents.`
+        previewContent.value = t('objects.fileTooLargeToPreview', { size: formatSize(row.size), maxSize: formatSize(MAX_TEXT_PREVIEW_SIZE) })
       } else {
         const response = await fetch(url)
         if (response.ok) {
           previewContent.value = await response.text()
         } else {
-          previewContent.value = 'Failed to load file content.'
+          previewContent.value = t('objects.failedToLoadContent')
         }
       }
     }
   } catch (e: any) {
-    ElMessage.error('Failed to load preview: ' + e.message)
+    ElMessage.error(t('objects.loadPreviewFailed') + ': ' + e.message)
     previewDialogVisible.value = false
   } finally {
     previewLoading.value = false
@@ -928,7 +909,6 @@ function formatDate(dateStr: string): string {
   text-decoration: underline;
 }
 
-/* 橙色主题按钮 */
 .primary-btn {
   background: #e67e22;
   border-color: #e67e22;
@@ -1116,7 +1096,6 @@ function formatDate(dateStr: string): string {
   border-top: 1px solid #f1f5f9;
 }
 
-/* Batch toolbar styles */
 .batch-toolbar {
   display: flex;
   justify-content: space-between;
@@ -1140,7 +1119,6 @@ function formatDate(dateStr: string): string {
   gap: 8px;
 }
 
-/* Preview Dialog Styles */
 .preview-dialog :deep(.el-dialog__body) {
   padding: 0;
   max-height: 70vh;
@@ -1292,7 +1270,6 @@ function formatDate(dateStr: string): string {
   gap: 8px;
 }
 
-/* Drag and Drop Overlay Styles */
 .drop-overlay {
   position: fixed;
   top: 0;
@@ -1349,7 +1326,6 @@ function formatDate(dateStr: string): string {
   }
 }
 
-/* Fade transition for drop overlay */
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease;

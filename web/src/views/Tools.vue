@@ -2,8 +2,8 @@
   <div class="page-container">
     <div class="page-header">
       <div class="page-title">
-        <h1>工具箱</h1>
-        <p class="page-subtitle">开发工具与系统配置</p>
+        <h1>{{ t('tools.title') }}</h1>
+        <p class="page-subtitle">{{ t('tools.subtitle') }}</p>
       </div>
     </div>
 
@@ -12,7 +12,7 @@
       <el-col :span="24">
         <div class="content-card">
           <div class="card-header">
-            <h3>Garbage Collection</h3>
+            <h3>{{ t('tools.garbageCollection') }}</h3>
             <div class="header-actions">
               <el-button
                 type="primary"
@@ -21,7 +21,7 @@
                 :loading="gcScanning"
                 :icon="Search"
               >
-                Scan
+                {{ t('tools.scan') }}
               </el-button>
               <el-button
                 type="danger"
@@ -30,19 +30,19 @@
                 :disabled="!gcResult || (gcResult.orphan_count === 0 && gcResult.expired_count === 0)"
                 :icon="Delete"
               >
-                Clean
+                {{ t('tools.clean') }}
               </el-button>
             </div>
           </div>
           <div class="card-body">
             <el-form :inline="true" class="gc-form">
-              <el-form-item label="Expired Upload Age">
+              <el-form-item :label="t('tools.expiredUploadAge')">
                 <el-select v-model="gcMaxAge" style="width: 150px">
-                  <el-option label="1 hour" :value="1" />
-                  <el-option label="6 hours" :value="6" />
-                  <el-option label="24 hours" :value="24" />
-                  <el-option label="7 days" :value="168" />
-                  <el-option label="30 days" :value="720" />
+                  <el-option :label="t('tools.hours', { count: 1 })" :value="1" />
+                  <el-option :label="t('tools.hours', { count: 6 })" :value="6" />
+                  <el-option :label="t('tools.hours', { count: 24 })" :value="24" />
+                  <el-option :label="t('tools.days', { count: 7 })" :value="168" />
+                  <el-option :label="t('tools.days', { count: 30 })" :value="720" />
                 </el-select>
               </el-form-item>
             </el-form>
@@ -53,21 +53,21 @@
                 <el-col :span="8">
                   <div class="stat-card" :class="{ danger: gcResult.orphan_count > 0 }">
                     <div class="stat-value">{{ gcResult.orphan_count }}</div>
-                    <div class="stat-label">Orphan Files</div>
+                    <div class="stat-label">{{ t('tools.orphanFiles') }}</div>
                     <div class="stat-size" v-if="gcResult.orphan_size > 0">{{ formatSize(gcResult.orphan_size) }}</div>
                   </div>
                 </el-col>
                 <el-col :span="8">
                   <div class="stat-card" :class="{ warning: gcResult.expired_count > 0 }">
                     <div class="stat-value">{{ gcResult.expired_count }}</div>
-                    <div class="stat-label">Expired Uploads</div>
+                    <div class="stat-label">{{ t('tools.expiredUploads') }}</div>
                     <div class="stat-size" v-if="gcResult.expired_part_size > 0">{{ formatSize(gcResult.expired_part_size) }}</div>
                   </div>
                 </el-col>
                 <el-col :span="8">
                   <div class="stat-card" :class="{ success: gcResult.cleaned }">
-                    <div class="stat-value">{{ gcResult.cleaned ? 'Yes' : 'No' }}</div>
-                    <div class="stat-label">Cleaned</div>
+                    <div class="stat-value">{{ gcResult.cleaned ? t('tools.yes') : t('tools.no') }}</div>
+                    <div class="stat-label">{{ t('tools.cleaned') }}</div>
                     <div class="stat-size" v-if="gcResult.cleaned_at">{{ formatTime(gcResult.cleaned_at) }}</div>
                   </div>
                 </el-col>
@@ -75,45 +75,45 @@
 
               <!-- 孤立文件列表 -->
               <div v-if="gcResult.orphan_files && gcResult.orphan_files.length > 0" class="gc-files">
-                <h4>Orphan Files ({{ gcResult.orphan_files.length }})</h4>
+                <h4>{{ t('tools.orphanFilesCount', { count: gcResult.orphan_files.length }) }}</h4>
                 <el-table :data="gcResult.orphan_files.slice(0, 20)" size="small" max-height="300">
-                  <el-table-column prop="path" label="Path" min-width="300" />
-                  <el-table-column label="Size" width="100">
+                  <el-table-column prop="path" :label="t('tools.path')" min-width="300" />
+                  <el-table-column :label="t('tools.size')" width="100">
                     <template #default="{ row }">{{ formatSize(row.size) }}</template>
                   </el-table-column>
-                  <el-table-column label="Modified" width="180">
+                  <el-table-column :label="t('tools.modified')" width="180">
                     <template #default="{ row }">{{ formatTime(row.modified_at) }}</template>
                   </el-table-column>
                 </el-table>
                 <div v-if="gcResult.orphan_files.length > 20" class="more-hint">
-                  And {{ gcResult.orphan_files.length - 20 }} more files...
+                  {{ t('tools.andMoreFiles', { count: gcResult.orphan_files.length - 20 }) }}
                 </div>
               </div>
 
               <!-- 过期上传列表 -->
               <div v-if="gcResult.expired_uploads && gcResult.expired_uploads.length > 0" class="gc-files">
-                <h4>Expired Uploads ({{ gcResult.expired_uploads.length }})</h4>
+                <h4>{{ t('tools.expiredUploadsCount', { count: gcResult.expired_uploads.length }) }}</h4>
                 <el-table :data="gcResult.expired_uploads.slice(0, 10)" size="small">
-                  <el-table-column prop="" label="Upload ID">
+                  <el-table-column prop="" :label="t('tools.uploadId')">
                     <template #default="{ row }">{{ row }}</template>
                   </el-table-column>
                 </el-table>
                 <div v-if="gcResult.expired_uploads.length > 10" class="more-hint">
-                  And {{ gcResult.expired_uploads.length - 10 }} more uploads...
+                  {{ t('tools.andMoreUploads', { count: gcResult.expired_uploads.length - 10 }) }}
                 </div>
               </div>
 
               <!-- 无垃圾 -->
               <div v-if="gcResult.orphan_count === 0 && gcResult.expired_count === 0" class="gc-clean">
                 <el-icon :size="48" color="#10b981"><CircleCheck /></el-icon>
-                <p>No garbage found. Your storage is clean!</p>
+                <p>{{ t('tools.noGarbageFound') }}</p>
               </div>
             </div>
 
             <!-- 未扫描提示 -->
             <div v-else class="gc-empty">
               <el-icon :size="48" color="#94a3b8"><Search /></el-icon>
-              <p>Click "Scan" to find orphan files and expired uploads</p>
+              <p>{{ t('tools.clickScanHint') }}</p>
             </div>
           </div>
         </div>
@@ -123,7 +123,7 @@
       <el-col :span="24" style="margin-top: 24px">
         <div class="content-card">
           <div class="card-header">
-            <h3>Data Integrity Check</h3>
+            <h3>{{ t('tools.dataIntegrityCheck') }}</h3>
             <div class="header-actions">
               <el-button
                 type="primary"
@@ -132,7 +132,7 @@
                 :loading="integrityChecking"
                 :icon="Search"
               >
-                Check
+                {{ t('tools.check') }}
               </el-button>
               <el-button
                 type="warning"
@@ -141,22 +141,22 @@
                 :disabled="!integrityResult || integrityResult.issues_found === 0"
                 :icon="Refresh"
               >
-                Repair
+                {{ t('tools.repair') }}
               </el-button>
             </div>
           </div>
           <div class="card-body">
             <el-form :inline="true" class="gc-form">
-              <el-form-item label="Verify ETag">
+              <el-form-item :label="t('tools.verifyEtag')">
                 <el-switch v-model="integrityVerifyEtag" />
               </el-form-item>
-              <el-form-item label="Limit">
+              <el-form-item :label="t('tools.limit')">
                 <el-select v-model="integrityLimit" style="width: 150px">
-                  <el-option label="100 objects" :value="100" />
-                  <el-option label="500 objects" :value="500" />
-                  <el-option label="1000 objects" :value="1000" />
-                  <el-option label="5000 objects" :value="5000" />
-                  <el-option label="All objects" :value="0" />
+                  <el-option :label="t('tools.objectsCount', { count: 100 })" :value="100" />
+                  <el-option :label="t('tools.objectsCount', { count: 500 })" :value="500" />
+                  <el-option :label="t('tools.objectsCount', { count: 1000 })" :value="1000" />
+                  <el-option :label="t('tools.objectsCount', { count: 5000 })" :value="5000" />
+                  <el-option :label="t('tools.allObjects')" :value="0" />
                 </el-select>
               </el-form-item>
             </el-form>
@@ -167,70 +167,70 @@
                 <el-col :span="6">
                   <div class="stat-card">
                     <div class="stat-value">{{ integrityResult.total_checked }}</div>
-                    <div class="stat-label">Total Checked</div>
+                    <div class="stat-label">{{ t('tools.totalChecked') }}</div>
                     <div class="stat-size">{{ integrityResult.duration.toFixed(2) }}s</div>
                   </div>
                 </el-col>
                 <el-col :span="6">
                   <div class="stat-card" :class="{ danger: integrityResult.missing_files > 0 }">
                     <div class="stat-value">{{ integrityResult.missing_files }}</div>
-                    <div class="stat-label">Missing Files</div>
+                    <div class="stat-label">{{ t('tools.missingFiles') }}</div>
                   </div>
                 </el-col>
                 <el-col :span="6">
                   <div class="stat-card" :class="{ warning: integrityResult.etag_mismatches > 0 }">
                     <div class="stat-value">{{ integrityResult.etag_mismatches }}</div>
-                    <div class="stat-label">ETag Mismatches</div>
+                    <div class="stat-label">{{ t('tools.etagMismatches') }}</div>
                   </div>
                 </el-col>
                 <el-col :span="6">
                   <div class="stat-card" :class="{ success: integrityResult.repaired }">
                     <div class="stat-value">{{ integrityResult.repaired ? integrityResult.repaired_count : '-' }}</div>
-                    <div class="stat-label">Repaired</div>
+                    <div class="stat-label">{{ t('tools.repaired') }}</div>
                   </div>
                 </el-col>
               </el-row>
 
               <!-- 问题列表 -->
               <div v-if="integrityResult.issues && integrityResult.issues.length > 0" class="gc-files">
-                <h4>Issues Found ({{ integrityResult.issues.length }})</h4>
+                <h4>{{ t('tools.issuesFound', { count: integrityResult.issues.length }) }}</h4>
                 <el-table :data="integrityResult.issues.slice(0, 20)" size="small" max-height="300">
-                  <el-table-column prop="bucket" label="Bucket" width="120" />
-                  <el-table-column prop="key" label="Key" min-width="200" />
-                  <el-table-column label="Issue Type" width="150">
+                  <el-table-column prop="bucket" :label="t('tools.bucket')" width="120" />
+                  <el-table-column prop="key" :label="t('tools.key')" min-width="200" />
+                  <el-table-column :label="t('tools.issueType')" width="150">
                     <template #default="{ row }">
                       <el-tag :type="getIssueTagType(row.issue_type)" size="small">
                         {{ formatIssueType(row.issue_type) }}
                       </el-tag>
                     </template>
                   </el-table-column>
-                  <el-table-column label="Size" width="100">
+                  <el-table-column :label="t('tools.size')" width="100">
                     <template #default="{ row }">{{ formatSize(row.size) }}</template>
                   </el-table-column>
-                  <el-table-column label="Repairable" width="100">
+                  <el-table-column :label="t('tools.repairable')" width="100">
                     <template #default="{ row }">
                       <el-tag :type="row.repairable ? 'success' : 'info'" size="small">
-                        {{ row.repairable ? 'Yes' : 'No' }}
+                        {{ row.repairable ? t('tools.yes') : t('tools.no') }}
                       </el-tag>
                     </template>
                   </el-table-column>
                 </el-table>
                 <div v-if="integrityResult.issues.length > 20" class="more-hint">
-                  And {{ integrityResult.issues.length - 20 }} more issues...
+                  {{ t('tools.andMoreIssues', { count: integrityResult.issues.length - 20 }) }}
                 </div>
               </div>
 
               <!-- 无问题 -->
               <div v-if="integrityResult.issues_found === 0" class="gc-clean">
                 <el-icon :size="48" color="#10b981"><CircleCheck /></el-icon>
-                <p>No integrity issues found. Your data is healthy!</p>
+                <p>{{ t('tools.noIntegrityIssues') }}</p>
               </div>
             </div>
 
             <!-- 未检查提示 -->
             <div v-else class="gc-empty">
               <el-icon :size="48" color="#94a3b8"><Search /></el-icon>
-              <p>Click "Check" to verify data integrity</p>
+              <p>{{ t('tools.clickCheckHint') }}</p>
             </div>
           </div>
         </div>
@@ -240,7 +240,7 @@
       <el-col :span="24" style="margin-top: 24px">
         <div class="content-card">
           <div class="card-header">
-            <h3>Data Migration</h3>
+            <h3>{{ t('tools.dataMigration') }}</h3>
             <div class="header-actions">
               <el-button
                 type="primary"
@@ -248,14 +248,14 @@
                 @click="openMigrateDialog"
                 :icon="Link"
               >
-                New Migration
+                {{ t('tools.newMigration') }}
               </el-button>
               <el-button
                 @click="loadMigrateJobs"
                 :loading="migrateLoading"
                 :icon="Refresh"
               >
-                Refresh
+                {{ t('common.refresh') }}
               </el-button>
             </div>
           </div>
@@ -263,12 +263,12 @@
             <!-- 迁移任务列表 -->
             <div v-if="migrateJobs.length > 0" class="migrate-list">
               <el-table :data="migrateJobs" stripe>
-                <el-table-column label="Job ID" width="120">
+                <el-table-column :label="t('tools.jobId')" width="120">
                   <template #default="{ row }">
                     <span class="job-id">{{ row.jobId.substring(0, 8) }}...</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="Source" min-width="200">
+                <el-table-column :label="t('tools.source')" min-width="200">
                   <template #default="{ row }">
                     <div class="source-info">
                       <div class="source-endpoint">{{ row.config.sourceEndpoint }}</div>
@@ -276,12 +276,12 @@
                     </div>
                   </template>
                 </el-table-column>
-                <el-table-column label="Target" width="150">
+                <el-table-column :label="t('tools.target')" width="150">
                   <template #default="{ row }">
                     <span>{{ row.config.targetBucket }}{{ row.config.targetPrefix ? '/' + row.config.targetPrefix : '' }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="Progress" width="180">
+                <el-table-column :label="t('tools.progress')" width="180">
                   <template #default="{ row }">
                     <div class="progress-cell">
                       <el-progress
@@ -291,24 +291,24 @@
                       />
                       <div class="progress-text">
                         {{ row.completed }}/{{ row.totalObjects }}
-                        <span v-if="row.skipped > 0">({{ row.skipped }} skipped)</span>
+                        <span v-if="row.skipped > 0">({{ row.skipped }} {{ t('tools.skipped') }})</span>
                       </div>
                     </div>
                   </template>
                 </el-table-column>
-                <el-table-column label="Status" width="110">
+                <el-table-column :label="t('tools.status')" width="110">
                   <template #default="{ row }">
                     <el-tag :type="getMigrateStatusType(row.status)" size="small">
                       {{ row.status }}
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="Duration" width="100">
+                <el-table-column :label="t('tools.duration')" width="100">
                   <template #default="{ row }">
                     <span class="duration">{{ getMigrateDuration(row) }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="Actions" width="120" fixed="right">
+                <el-table-column :label="t('common.actions')" width="120" fixed="right">
                   <template #default="{ row }">
                     <el-button
                       v-if="row.status === 'running' || row.status === 'pending'"
@@ -317,7 +317,7 @@
                       @click="handleCancelMigration(row)"
                       :icon="Close"
                     >
-                      Cancel
+                      {{ t('common.cancel') }}
                     </el-button>
                     <el-button
                       v-else
@@ -326,7 +326,7 @@
                       @click="handleDeleteMigration(row)"
                       :icon="Delete"
                     >
-                      Delete
+                      {{ t('common.delete') }}
                     </el-button>
                   </template>
                 </el-table-column>
@@ -336,28 +336,28 @@
             <!-- 无任务提示 -->
             <div v-else class="gc-empty">
               <el-icon :size="48" color="#94a3b8"><Link /></el-icon>
-              <p>No migration jobs. Click "New Migration" to start importing data from another S3 service.</p>
+              <p>{{ t('tools.noMigrationJobs') }}</p>
             </div>
           </div>
         </div>
       </el-col>
 
       <!-- 迁移配置对话框 -->
-      <el-dialog v-model="showMigrateDialog" title="Create Migration Job" width="600px">
+      <el-dialog v-model="showMigrateDialog" :title="t('tools.createMigrationJob')" width="600px">
         <el-form :model="migrateForm" label-position="top">
-          <el-divider content-position="left">Source S3 Service</el-divider>
+          <el-divider content-position="left">{{ t('tools.sourceS3Service') }}</el-divider>
 
           <el-row :gutter="16">
             <el-col :span="16">
-              <el-form-item label="Endpoint URL" required>
+              <el-form-item :label="t('tools.endpointUrl')" required>
                 <el-input
                   v-model="migrateForm.sourceEndpoint"
-                  placeholder="https://s3.amazonaws.com or MinIO endpoint"
+                  :placeholder="t('tools.endpointPlaceholder')"
                 />
               </el-form-item>
             </el-col>
             <el-col :span="8">
-              <el-form-item label="Region">
+              <el-form-item :label="t('tools.region')">
                 <el-input v-model="migrateForm.sourceRegion" placeholder="us-east-1" />
               </el-form-item>
             </el-col>
@@ -365,12 +365,12 @@
 
           <el-row :gutter="16">
             <el-col :span="12">
-              <el-form-item label="Access Key" required>
+              <el-form-item :label="t('tools.accessKey')" required>
                 <el-input v-model="migrateForm.sourceAccessKey" placeholder="Access Key ID" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="Secret Key" required>
+              <el-form-item :label="t('tools.secretKey')" required>
                 <el-input
                   v-model="migrateForm.sourceSecretKey"
                   type="password"
@@ -383,49 +383,49 @@
 
           <el-row :gutter="16">
             <el-col :span="12">
-              <el-form-item label="Source Bucket" required>
+              <el-form-item :label="t('tools.sourceBucket')" required>
                 <el-input v-model="migrateForm.sourceBucket" placeholder="bucket-name" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="Source Prefix">
-                <el-input v-model="migrateForm.sourcePrefix" placeholder="Optional: folder/path/" />
+              <el-form-item :label="t('tools.sourcePrefix')">
+                <el-input v-model="migrateForm.sourcePrefix" :placeholder="t('tools.optionalPrefix')" />
               </el-form-item>
             </el-col>
           </el-row>
 
           <el-button type="info" size="small" @click="handleTestConnection" :loading="migrateValidating">
-            Test Connection
+            {{ t('tools.testConnection') }}
           </el-button>
 
-          <el-divider content-position="left">Target (Local)</el-divider>
+          <el-divider content-position="left">{{ t('tools.targetLocal') }}</el-divider>
 
           <el-row :gutter="16">
             <el-col :span="12">
-              <el-form-item label="Target Bucket" required>
-                <el-select v-model="migrateForm.targetBucket" placeholder="Select local bucket" style="width: 100%">
+              <el-form-item :label="t('tools.targetBucket')" required>
+                <el-select v-model="migrateForm.targetBucket" :placeholder="t('tools.selectLocalBucket')" style="width: 100%">
                   <el-option v-for="b in buckets" :key="b.name" :label="b.name" :value="b.name" />
                 </el-select>
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="Target Prefix">
-                <el-input v-model="migrateForm.targetPrefix" placeholder="Optional: folder/path/" />
+              <el-form-item :label="t('tools.targetPrefix')">
+                <el-input v-model="migrateForm.targetPrefix" :placeholder="t('tools.optionalPrefix')" />
               </el-form-item>
             </el-col>
           </el-row>
 
           <el-form-item>
             <el-checkbox v-model="migrateForm.overwriteExist">
-              Overwrite existing files
+              {{ t('tools.overwriteExisting') }}
             </el-checkbox>
           </el-form-item>
         </el-form>
 
         <template #footer>
-          <el-button @click="showMigrateDialog = false">Cancel</el-button>
+          <el-button @click="showMigrateDialog = false">{{ t('common.cancel') }}</el-button>
           <el-button type="primary" class="primary-btn" @click="handleCreateMigration" :loading="migrateCreating">
-            Start Migration
+            {{ t('tools.startMigration') }}
           </el-button>
         </template>
       </el-dialog>
@@ -434,14 +434,14 @@
       <el-col :span="12" style="margin-top: 24px">
         <div class="content-card">
           <div class="card-header">
-            <h3>Presigned URL Generator</h3>
+            <h3>{{ t('tools.presignedUrlGenerator') }}</h3>
           </div>
           <div class="card-body">
             <el-form :model="presignForm" label-position="top">
-              <el-form-item label="Bucket">
+              <el-form-item :label="t('tools.bucket')">
                 <el-select
                   v-model="presignForm.bucket"
-                  placeholder="Select bucket"
+                  :placeholder="t('tools.selectBucket')"
                   @change="loadBucketObjects"
                   style="width: 100%"
                 >
@@ -449,12 +449,12 @@
                 </el-select>
               </el-form-item>
 
-              <el-form-item label="Object Path">
-                <el-input v-model="presignForm.key" placeholder="Enter or select object path">
+              <el-form-item :label="t('tools.objectPath')">
+                <el-input v-model="presignForm.key" :placeholder="t('tools.enterOrSelectPath')">
                   <template #append>
                     <el-select
                       v-model="presignForm.key"
-                      placeholder="Select"
+                      :placeholder="t('tools.select')"
                       style="width: 160px"
                       :disabled="!presignForm.bucket"
                     >
@@ -466,24 +466,24 @@
 
               <el-row :gutter="16">
                 <el-col :span="12">
-                  <el-form-item label="HTTP Method">
+                  <el-form-item :label="t('tools.httpMethod')">
                     <el-select v-model="presignForm.method" style="width: 100%">
-                      <el-option label="PUT (Upload)" value="PUT" />
-                      <el-option label="GET (Download)" value="GET" />
-                      <el-option label="DELETE (Delete)" value="DELETE" />
-                      <el-option label="HEAD (Info)" value="HEAD" />
+                      <el-option :label="t('tools.putUpload')" value="PUT" />
+                      <el-option :label="t('tools.getDownload')" value="GET" />
+                      <el-option :label="t('tools.deleteRemove')" value="DELETE" />
+                      <el-option :label="t('tools.headInfo')" value="HEAD" />
                     </el-select>
                   </el-form-item>
                 </el-col>
                 <el-col :span="12">
-                  <el-form-item label="Expiration">
+                  <el-form-item :label="t('tools.expiration')">
                     <el-select v-model="presignForm.expiresMinutes" style="width: 100%">
-                      <el-option label="15 minutes" :value="15" />
-                      <el-option label="1 hour" :value="60" />
-                      <el-option label="6 hours" :value="360" />
-                      <el-option label="12 hours" :value="720" />
-                      <el-option label="24 hours" :value="1440" />
-                      <el-option label="7 days" :value="10080" />
+                      <el-option :label="t('tools.minutes', { count: 15 })" :value="15" />
+                      <el-option :label="t('tools.hours', { count: 1 })" :value="60" />
+                      <el-option :label="t('tools.hours', { count: 6 })" :value="360" />
+                      <el-option :label="t('tools.hours', { count: 12 })" :value="720" />
+                      <el-option :label="t('tools.hours', { count: 24 })" :value="1440" />
+                      <el-option :label="t('tools.days', { count: 7 })" :value="10080" />
                     </el-select>
                   </el-form-item>
                 </el-col>
@@ -491,18 +491,18 @@
 
               <el-row :gutter="16">
                 <el-col :span="12">
-                  <el-form-item label="Max Size (MB)">
+                  <el-form-item :label="t('tools.maxSizeMB')">
                     <el-input-number
                       v-model="presignForm.maxSizeMB"
                       :min="0"
                       :max="1024"
-                      placeholder="0 = No limit"
+                      :placeholder="t('tools.noLimit')"
                       style="width: 100%"
                     />
                   </el-form-item>
                 </el-col>
                 <el-col :span="12">
-                  <el-form-item label="Content Type">
+                  <el-form-item :label="t('tools.contentType')">
                     <el-input v-model="presignForm.contentType" placeholder="e.g., image/jpeg" />
                   </el-form-item>
                 </el-col>
@@ -510,18 +510,18 @@
 
               <el-form-item>
                 <el-button type="primary" class="primary-btn" @click="handleGeneratePresignedUrl" :loading="generating">
-                  Generate URL
+                  {{ t('tools.generateUrl') }}
                 </el-button>
-                <el-button @click="clearForm">Clear</el-button>
+                <el-button @click="clearForm">{{ t('tools.clear') }}</el-button>
               </el-form-item>
             </el-form>
 
             <div v-if="presignedUrl" class="result-box">
-              <label>Generated URL</label>
+              <label>{{ t('tools.generatedUrl') }}</label>
               <el-input v-model="presignedUrl" type="textarea" :rows="3" readonly />
               <el-button type="primary" class="primary-btn" size="small" @click="copyUrl" style="margin-top: 12px">
                 <el-icon><CopyDocument /></el-icon>
-                Copy URL
+                {{ t('tools.copyUrl') }}
               </el-button>
             </div>
           </div>
@@ -531,20 +531,20 @@
       <el-col :span="12" style="margin-top: 24px">
         <div class="content-card">
           <div class="card-header">
-            <h3>Server Information</h3>
+            <h3>{{ t('tools.serverInfo') }}</h3>
           </div>
           <div class="card-body">
             <div class="info-grid">
               <div class="info-item">
-                <label>Endpoint</label>
+                <label>{{ t('tools.endpoint') }}</label>
                 <span>{{ auth.endpoint }}</span>
               </div>
               <div class="info-item">
-                <label>Region</label>
-                <span>{{ auth.region }}</span>
+                <label>{{ t('tools.region') }}</label>
+                <span>{{ serverRegion }}</span>
               </div>
               <div class="info-item">
-                <label>Buckets</label>
+                <label>{{ t('tools.bucketsCount') }}</label>
                 <span>{{ buckets.length }}</span>
               </div>
             </div>
@@ -553,7 +553,7 @@
 
         <div class="content-card" style="margin-top: 24px">
           <div class="card-header">
-            <h3>AWS CLI Configuration</h3>
+            <h3>{{ t('tools.awsCliConfig') }}</h3>
           </div>
           <div class="card-body">
             <div class="code-block">
@@ -561,7 +561,7 @@
             </div>
             <el-button type="primary" class="primary-btn" size="small" @click="copyAwsConfig" style="margin-top: 12px">
               <el-icon><CopyDocument /></el-icon>
-              Copy Configuration
+              {{ t('tools.copyConfig') }}
             </el-button>
           </div>
         </div>
@@ -572,6 +572,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CopyDocument, Search, Delete, CircleCheck, Refresh, Link, Close, Timer, Check, Warning } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
@@ -580,15 +581,18 @@ import {
   scanGC, executeGC, type GCResult,
   checkIntegrity, repairIntegrity, type IntegrityResult,
   listMigrateJobs, createMigrateJob, getMigrateProgress, cancelMigrateJob, deleteMigrateJob, validateMigrateConfig,
-  type MigrateConfig, type MigrateProgress
+  type MigrateConfig, type MigrateProgress,
+  getSettings
 } from '../api/admin'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 
 const buckets = ref<Bucket[]>([])
 const bucketObjects = ref<S3Object[]>([])
 const presignedUrl = ref('')
 const generating = ref(false)
+const serverRegion = ref('us-east-1')
 
 // GC 状态
 const gcScanning = ref(false)
@@ -639,7 +643,7 @@ aws_secret_access_key = YOUR_SECRET_ACCESS_KEY
 
 # ~/.aws/config
 [profile sss]
-region = ${auth.region}
+region = ${serverRegion.value}
 output = json
 
 # Usage examples
@@ -650,13 +654,16 @@ aws --endpoint-url ${auth.endpoint} --profile sss s3 cp file.txt s3://my-bucket/
 
 onMounted(async () => {
   try {
-    buckets.value = await listBuckets()
+    const [bucketsData, settings] = await Promise.all([
+      listBuckets(),
+      getSettings()
+    ])
+    buckets.value = bucketsData
+    serverRegion.value = settings.region
   } catch (e) {
     // ignore
   }
-  // 加载迁移任务
   loadMigrateJobs()
-  // 启动轮询
   startMigratePolling()
 })
 
@@ -670,12 +677,12 @@ async function handleScanGC() {
   try {
     gcResult.value = await scanGC(gcMaxAge.value)
     if (gcResult.value.orphan_count === 0 && gcResult.value.expired_count === 0) {
-      ElMessage.success('No garbage found')
+      ElMessage.success(t('tools.noGarbageFound'))
     } else {
-      ElMessage.info(`Found ${gcResult.value.orphan_count} orphan files and ${gcResult.value.expired_count} expired uploads`)
+      ElMessage.info(t('tools.foundGarbage', { orphan: gcResult.value.orphan_count, expired: gcResult.value.expired_count }))
     }
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || 'Failed to scan garbage')
+    ElMessage.error(error.response?.data?.message || t('tools.scanFailed'))
   } finally {
     gcScanning.value = false
   }
@@ -687,21 +694,21 @@ async function handleExecuteGC() {
 
   try {
     await ElMessageBox.confirm(
-      `This will permanently delete ${gcResult.value.orphan_count} orphan files (${formatSize(gcResult.value.orphan_size)}) and ${gcResult.value.expired_count} expired uploads. Continue?`,
-      'Confirm Garbage Collection',
+      t('tools.confirmClean', { orphan: gcResult.value.orphan_count, orphanSize: formatSize(gcResult.value.orphan_size), expired: gcResult.value.expired_count }),
+      t('tools.confirmGarbageCollection'),
       {
-        confirmButtonText: 'Clean',
-        cancelButtonText: 'Cancel',
+        confirmButtonText: t('tools.clean'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning'
       }
     )
 
     gcExecuting.value = true
     gcResult.value = await executeGC(gcMaxAge.value, false)
-    ElMessage.success('Garbage collection completed')
+    ElMessage.success(t('tools.gcCompleted'))
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.message || 'Failed to clean garbage')
+      ElMessage.error(error.response?.data?.message || t('tools.cleanFailed'))
     }
   } finally {
     gcExecuting.value = false
@@ -714,12 +721,12 @@ async function handleCheckIntegrity() {
   try {
     integrityResult.value = await checkIntegrity(integrityVerifyEtag.value, integrityLimit.value)
     if (integrityResult.value.issues_found === 0) {
-      ElMessage.success('No integrity issues found')
+      ElMessage.success(t('tools.noIntegrityIssues'))
     } else {
-      ElMessage.warning(`Found ${integrityResult.value.issues_found} integrity issues`)
+      ElMessage.warning(t('tools.foundIssues', { count: integrityResult.value.issues_found }))
     }
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || 'Failed to check integrity')
+    ElMessage.error(error.response?.data?.message || t('tools.checkFailed'))
   } finally {
     integrityChecking.value = false
   }
@@ -731,11 +738,11 @@ async function handleRepairIntegrity() {
 
   try {
     await ElMessageBox.confirm(
-      `This will repair ${integrityResult.value.issues_found} issues. Missing files will have their metadata deleted, and ETag mismatches will be recalculated. Continue?`,
-      'Confirm Repair',
+      t('tools.confirmRepair', { count: integrityResult.value.issues_found }),
+      t('tools.confirmRepairTitle'),
       {
-        confirmButtonText: 'Repair',
-        cancelButtonText: 'Cancel',
+        confirmButtonText: t('tools.repair'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning'
       }
     )
@@ -746,17 +753,16 @@ async function handleRepairIntegrity() {
       integrityVerifyEtag.value,
       integrityLimit.value
     )
-    ElMessage.success(`Repaired ${integrityResult.value.repaired_count} issues`)
+    ElMessage.success(t('tools.repairedCount', { count: integrityResult.value.repaired_count }))
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.message || 'Failed to repair integrity issues')
+      ElMessage.error(error.response?.data?.message || t('tools.repairFailed'))
     }
   } finally {
     integrityRepairing.value = false
   }
 }
 
-// 获取问题类型标签颜色
 function getIssueTagType(issueType: string): string {
   switch (issueType) {
     case 'missing_file':
@@ -770,21 +776,19 @@ function getIssueTagType(issueType: string): string {
   }
 }
 
-// 格式化问题类型
 function formatIssueType(issueType: string): string {
   switch (issueType) {
     case 'missing_file':
-      return 'Missing File'
+      return t('tools.missingFile')
     case 'etag_mismatch':
-      return 'ETag Mismatch'
+      return t('tools.etagMismatch')
     case 'path_mismatch':
-      return 'Path Mismatch'
+      return t('tools.pathMismatch')
     default:
       return issueType
   }
 }
 
-// 格式化大小
 function formatSize(bytes: number): string {
   if (bytes === 0) return '0 B'
   const k = 1024
@@ -793,7 +797,6 @@ function formatSize(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-// 格式化时间
 function formatTime(timeStr: string): string {
   if (!timeStr) return '-'
   const date = new Date(timeStr)
@@ -812,7 +815,7 @@ async function loadBucketObjects() {
 
 async function handleGeneratePresignedUrl() {
   if (!presignForm.bucket || !presignForm.key) {
-    ElMessage.warning('Please select bucket and object path')
+    ElMessage.warning(t('tools.selectBucketAndPath'))
     return
   }
 
@@ -829,7 +832,7 @@ async function handleGeneratePresignedUrl() {
 
     presignedUrl.value = result.url
 
-    let info = `Generated ${result.method} presigned URL`
+    let info = t('tools.generatedPresignedUrl', { method: result.method })
     if (presignForm.maxSizeMB > 0) {
       info += `, max ${presignForm.maxSizeMB}MB`
     }
@@ -839,13 +842,12 @@ async function handleGeneratePresignedUrl() {
     ElMessage.success(info)
   } catch (error: any) {
     console.error('Failed to generate presigned URL:', error)
-    ElMessage.error(error.response?.data?.message || 'Failed to generate presigned URL')
+    ElMessage.error(error.response?.data?.message || t('tools.generateFailed'))
   } finally {
     generating.value = false
   }
 }
 
-// 兼容 HTTP 环境的剪贴板复制
 function copyToClipboard(text: string) {
   try {
     if (navigator.clipboard && window.isSecureContext) {
@@ -860,9 +862,9 @@ function copyToClipboard(text: string) {
       document.execCommand('copy')
       document.body.removeChild(textarea)
     }
-    ElMessage.success('Copied to clipboard')
+    ElMessage.success(t('common.copied'))
   } catch {
-    ElMessage.error('Failed to copy')
+    ElMessage.error(t('common.copyFailed'))
   }
 }
 
@@ -887,7 +889,6 @@ function clearForm() {
 
 // ========== 迁移功能 ==========
 
-// 加载迁移任务列表
 async function loadMigrateJobs() {
   migrateLoading.value = true
   try {
@@ -899,10 +900,8 @@ async function loadMigrateJobs() {
   }
 }
 
-// 启动轮询
 function startMigratePolling() {
   migratePollingTimer.value = window.setInterval(() => {
-    // 只有当有进行中的任务时才轮询
     const hasRunning = migrateJobs.value.some(j => j.status === 'pending' || j.status === 'running')
     if (hasRunning) {
       loadMigrateJobs()
@@ -910,7 +909,6 @@ function startMigratePolling() {
   }, 2000)
 }
 
-// 停止轮询
 function stopMigratePolling() {
   if (migratePollingTimer.value) {
     clearInterval(migratePollingTimer.value)
@@ -918,13 +916,11 @@ function stopMigratePolling() {
   }
 }
 
-// 打开创建迁移对话框
 function openMigrateDialog() {
   resetMigrateForm()
   showMigrateDialog.value = true
 }
 
-// 重置迁移表单
 function resetMigrateForm() {
   migrateForm.sourceEndpoint = ''
   migrateForm.sourceAccessKey = ''
@@ -937,10 +933,9 @@ function resetMigrateForm() {
   migrateForm.overwriteExist = false
 }
 
-// 测试连接
 async function handleTestConnection() {
   if (!migrateForm.sourceEndpoint || !migrateForm.sourceAccessKey || !migrateForm.sourceSecretKey || !migrateForm.sourceBucket) {
-    ElMessage.warning('Please fill in all required source fields')
+    ElMessage.warning(t('tools.fillRequiredFields'))
     return
   }
 
@@ -948,88 +943,84 @@ async function handleTestConnection() {
   try {
     const result = await validateMigrateConfig(migrateForm)
     if (result.valid) {
-      ElMessage.success('Connection successful!')
+      ElMessage.success(t('tools.connectionSuccess'))
     } else {
-      ElMessage.error(result.message || 'Connection failed')
+      ElMessage.error(result.message || t('tools.connectionFailed'))
     }
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || 'Connection test failed')
+    ElMessage.error(error.response?.data?.message || t('tools.connectionTestFailed'))
   } finally {
     migrateValidating.value = false
   }
 }
 
-// 创建迁移任务
 async function handleCreateMigration() {
   if (!migrateForm.sourceEndpoint || !migrateForm.sourceAccessKey || !migrateForm.sourceSecretKey || !migrateForm.sourceBucket) {
-    ElMessage.warning('Please fill in all required source fields')
+    ElMessage.warning(t('tools.fillRequiredFields'))
     return
   }
   if (!migrateForm.targetBucket) {
-    ElMessage.warning('Please select a target bucket')
+    ElMessage.warning(t('tools.selectTargetBucket'))
     return
   }
 
   migrateCreating.value = true
   try {
     const result = await createMigrateJob(migrateForm)
-    ElMessage.success(`Migration job created: ${result.jobId.substring(0, 8)}...`)
+    ElMessage.success(t('tools.migrationCreated', { id: result.jobId.substring(0, 8) }))
     showMigrateDialog.value = false
     loadMigrateJobs()
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || 'Failed to create migration job')
+    ElMessage.error(error.response?.data?.message || t('tools.createMigrationFailed'))
   } finally {
     migrateCreating.value = false
   }
 }
 
-// 取消迁移任务
 async function handleCancelMigration(job: MigrateProgress) {
   try {
     await ElMessageBox.confirm(
-      `Cancel migration job ${job.jobId.substring(0, 8)}...? This will stop the transfer.`,
-      'Confirm Cancel',
+      t('tools.cancelMigrationConfirm', { id: job.jobId.substring(0, 8) }),
+      t('tools.confirmCancel'),
       {
-        confirmButtonText: 'Cancel Job',
-        cancelButtonText: 'Keep Running',
+        confirmButtonText: t('tools.cancelJob'),
+        cancelButtonText: t('tools.keepRunning'),
         type: 'warning'
       }
     )
 
     await cancelMigrateJob(job.jobId)
-    ElMessage.success('Migration cancelled')
+    ElMessage.success(t('tools.migrationCancelled'))
     loadMigrateJobs()
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.message || 'Failed to cancel migration')
+      ElMessage.error(error.response?.data?.message || t('tools.cancelFailed'))
     }
   }
 }
 
-// 删除迁移任务记录
 async function handleDeleteMigration(job: MigrateProgress) {
   try {
     await ElMessageBox.confirm(
-      `Delete migration record ${job.jobId.substring(0, 8)}...?`,
-      'Confirm Delete',
+      t('tools.deleteMigrationConfirm', { id: job.jobId.substring(0, 8) }),
+      t('tools.confirmDelete'),
       {
-        confirmButtonText: 'Delete',
-        cancelButtonText: 'Cancel',
+        confirmButtonText: t('common.delete'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning'
       }
     )
 
     await deleteMigrateJob(job.jobId)
-    ElMessage.success('Migration record deleted')
+    ElMessage.success(t('tools.migrationDeleted'))
     loadMigrateJobs()
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(error.response?.data?.message || 'Failed to delete migration record')
+      ElMessage.error(error.response?.data?.message || t('tools.deleteFailed'))
     }
   }
 }
 
-// 获取任务状态标签类型
 function getMigrateStatusType(status: string): string {
   switch (status) {
     case 'completed': return 'success'
@@ -1041,13 +1032,11 @@ function getMigrateStatusType(status: string): string {
   }
 }
 
-// 计算进度百分比
 function getMigrateProgress(job: MigrateProgress): number {
   if (job.totalObjects === 0) return 0
   return Math.round((job.completed / job.totalObjects) * 100)
 }
 
-// 计算已用时间
 function getMigrateDuration(job: MigrateProgress): string {
   const start = new Date(job.startTime).getTime()
   const end = job.endTime ? new Date(job.endTime).getTime() : Date.now()
@@ -1271,7 +1260,6 @@ function getMigrateDuration(job: MigrateProgress): string {
   word-break: break-all;
 }
 
-/* 迁移工具样式 */
 .migrate-list {
   margin-top: 8px;
 }
@@ -1318,7 +1306,6 @@ function getMigrateDuration(job: MigrateProgress): string {
   color: #64748b;
 }
 
-/* 橙色主题按钮 */
 .primary-btn {
   background: #e67e22;
   border-color: #e67e22;

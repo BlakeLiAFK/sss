@@ -19,14 +19,6 @@
             size="large"
           />
         </el-form-item>
-        <el-form-item prop="region">
-          <el-input
-            v-model="form.region"
-            :placeholder="t('login.region')"
-            :prefix-icon="Location"
-            size="large"
-          />
-        </el-form-item>
         <el-form-item prop="username">
           <el-input
             v-model="form.username"
@@ -119,7 +111,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, type FormInstance } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
-import { User, Lock, Link, Location } from '@element-plus/icons-vue'
+import { User, Lock, Link } from '@element-plus/icons-vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import axios from 'axios'
 import { getBaseUrl } from '../api/client'
@@ -134,7 +126,6 @@ const loading = ref(false)
 
 const form = reactive({
   endpoint: auth.endpoint || getBaseUrl(),
-  region: auth.region || 'us-east-1',
   username: 'admin',
   password: ''
 })
@@ -192,7 +183,6 @@ async function handleLogin() {
         auth.login(
           response.data.token,
           form.endpoint,
-          form.region,
           response.data.accessKeyId || '',
           response.data.secretAccessKey || ''
         )

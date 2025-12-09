@@ -2,12 +2,12 @@
   <div class="page-container">
     <div class="page-header">
       <div class="page-title">
-        <h1>审计日志</h1>
-        <p class="page-subtitle">操作记录与安全审计</p>
+        <h1>{{ t('auditLogs.title') }}</h1>
+        <p class="page-subtitle">{{ t('auditLogs.subtitle') }}</p>
       </div>
       <el-button @click="loadLogs" :loading="loading" class="refresh-btn">
         <el-icon><Refresh /></el-icon>
-        <span class="btn-text">刷新</span>
+        <span class="btn-text">{{ t('common.refresh') }}</span>
       </el-button>
     </div>
 
@@ -15,58 +15,58 @@
     <div class="stats-cards">
       <div class="stat-card">
         <div class="stat-value">{{ stats.total }}</div>
-        <div class="stat-label">总记录</div>
+        <div class="stat-label">{{ t('auditLogs.totalRecords') }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-value">{{ stats.today }}</div>
-        <div class="stat-label">今日操作</div>
+        <div class="stat-label">{{ t('auditLogs.todayOperations') }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-value" :class="{ 'text-danger': stats.failed > 0 }">{{ stats.failed }}</div>
-        <div class="stat-label">失败操作</div>
+        <div class="stat-label">{{ t('auditLogs.failedOperations') }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-value">{{ pagination.page }}/{{ Math.ceil(pagination.total / pagination.limit) || 1 }}</div>
-        <div class="stat-label">当前页</div>
+        <div class="stat-label">{{ t('auditLogs.currentPage') }}</div>
       </div>
     </div>
 
     <!-- 筛选器 -->
     <div class="filter-card">
       <div class="filter-row">
-        <el-select v-model="filters.action" clearable placeholder="操作类型" class="filter-item">
-          <el-option-group label="认证相关">
-            <el-option label="登录成功" value="login" />
-            <el-option label="登录失败" value="login_failed" />
-            <el-option label="登出" value="logout" />
-            <el-option label="重置密码" value="password_reset" />
+        <el-select v-model="filters.action" clearable :placeholder="t('auditLogs.operationType')" class="filter-item">
+          <el-option-group :label="t('auditLogs.authRelated')">
+            <el-option :label="t('auditLogs.actions.login')" value="login" />
+            <el-option :label="t('auditLogs.actions.loginFailed')" value="login_failed" />
+            <el-option :label="t('auditLogs.actions.logout')" value="logout" />
+            <el-option :label="t('auditLogs.actions.passwordReset')" value="password_reset" />
           </el-option-group>
-          <el-option-group label="系统相关">
-            <el-option label="系统安装" value="system_install" />
+          <el-option-group :label="t('auditLogs.systemRelated')">
+            <el-option :label="t('auditLogs.actions.systemInstall')" value="system_install" />
           </el-option-group>
-          <el-option-group label="桶操作">
-            <el-option label="创建桶" value="bucket_create" />
-            <el-option label="删除桶" value="bucket_delete" />
-            <el-option label="设为公开" value="bucket_set_public" />
-            <el-option label="设为私有" value="bucket_set_private" />
+          <el-option-group :label="t('auditLogs.bucketOps')">
+            <el-option :label="t('auditLogs.actions.bucketCreate')" value="bucket_create" />
+            <el-option :label="t('auditLogs.actions.bucketDelete')" value="bucket_delete" />
+            <el-option :label="t('auditLogs.actions.bucketSetPublic')" value="bucket_set_public" />
+            <el-option :label="t('auditLogs.actions.bucketSetPrivate')" value="bucket_set_private" />
           </el-option-group>
           <el-option-group label="API Key">
-            <el-option label="创建密钥" value="apikey_create" />
-            <el-option label="删除密钥" value="apikey_delete" />
-            <el-option label="更新密钥" value="apikey_update" />
-            <el-option label="重置Secret" value="apikey_reset_secret" />
-            <el-option label="设置权限" value="apikey_set_perm" />
-            <el-option label="删除权限" value="apikey_del_perm" />
+            <el-option :label="t('auditLogs.actions.apikeyCreate')" value="apikey_create" />
+            <el-option :label="t('auditLogs.actions.apikeyDelete')" value="apikey_delete" />
+            <el-option :label="t('auditLogs.actions.apikeyUpdate')" value="apikey_update" />
+            <el-option :label="t('auditLogs.actions.apikeyResetSecret')" value="apikey_reset_secret" />
+            <el-option :label="t('auditLogs.actions.apikeySetPerm')" value="apikey_set_perm" />
+            <el-option :label="t('auditLogs.actions.apikeyDelPerm')" value="apikey_del_perm" />
           </el-option-group>
         </el-select>
-        <el-input v-model="filters.actor" clearable placeholder="操作者" class="filter-item" />
-        <el-input v-model="filters.ip" clearable placeholder="IP 地址" class="filter-item" />
-        <el-select v-model="filters.success" clearable placeholder="结果" class="filter-item filter-item-sm">
-          <el-option label="成功" value="true" />
-          <el-option label="失败" value="false" />
+        <el-input v-model="filters.actor" clearable :placeholder="t('auditLogs.operator')" class="filter-item" />
+        <el-input v-model="filters.ip" clearable :placeholder="t('auditLogs.ipAddress')" class="filter-item" />
+        <el-select v-model="filters.success" clearable :placeholder="t('auditLogs.result')" class="filter-item filter-item-sm">
+          <el-option :label="t('auditLogs.success')" value="true" />
+          <el-option :label="t('auditLogs.failed')" value="false" />
         </el-select>
-        <el-button type="primary" @click="handleSearch" class="primary-btn">搜索</el-button>
-        <el-button @click="resetFilters">重置</el-button>
+        <el-button type="primary" @click="handleSearch" class="primary-btn">{{ t('auditLogs.search') }}</el-button>
+        <el-button @click="resetFilters">{{ t('auditLogs.reset') }}</el-button>
       </div>
     </div>
 
@@ -80,7 +80,7 @@
         </div>
         <div class="log-card-body">
           <div class="log-info-row">
-            <span class="log-label">操作者:</span>
+            <span class="log-label">{{ t('auditLogs.operator') }}:</span>
             <span>{{ log.actor }}</span>
           </div>
           <div class="log-info-row">
@@ -88,48 +88,48 @@
             <span>{{ log.ip || '-' }}</span>
           </div>
           <div class="log-info-row" v-if="log.resource">
-            <span class="log-label">资源:</span>
+            <span class="log-label">{{ t('auditLogs.resource') }}:</span>
             <span>{{ log.resource }}</span>
           </div>
           <div class="log-info-row">
-            <span class="log-label">时间:</span>
+            <span class="log-label">{{ t('auditLogs.time') }}:</span>
             <span>{{ formatTime(log.timestamp) }}</span>
           </div>
         </div>
       </div>
-      <el-empty v-if="!loading && logs.length === 0" description="暂无日志" />
+      <el-empty v-if="!loading && logs.length === 0" :description="t('auditLogs.noLogs')" />
     </div>
 
     <!-- 桌面端日志表格 -->
     <div class="content-card desktop-table">
       <div class="table-wrapper">
         <el-table :data="logs" v-loading="loading" class="data-table">
-          <el-table-column label="时间" width="160">
+          <el-table-column :label="t('auditLogs.time')" width="160">
             <template #default="{ row }">
               <span class="time-cell">{{ formatTime(row.timestamp) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="110">
+          <el-table-column :label="t('auditLogs.operation')" width="110">
             <template #default="{ row }">
               <el-tag :type="getActionType(row.action)" size="small">
                 {{ getActionLabel(row.action) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="actor" label="操作者" width="90" />
+          <el-table-column prop="actor" :label="t('auditLogs.operator')" width="90" />
           <el-table-column label="IP" width="130">
             <template #default="{ row }">
               <span class="ip-cell">{{ row.ip || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="resource" label="资源" min-width="100" show-overflow-tooltip />
-          <el-table-column label="详情" min-width="150" class-name="hide-on-tablet">
+          <el-table-column prop="resource" :label="t('auditLogs.resource')" min-width="100" show-overflow-tooltip />
+          <el-table-column :label="t('auditLogs.details')" min-width="150" class-name="hide-on-tablet">
             <template #default="{ row }">
               <span v-if="row.detail" class="detail-cell">{{ formatDetail(row.detail) }}</span>
               <span v-else class="no-detail">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="结果" width="70" align="center">
+          <el-table-column :label="t('auditLogs.result')" width="70" align="center">
             <template #default="{ row }">
               <el-icon v-if="row.success" class="success-icon"><CircleCheck /></el-icon>
               <el-icon v-else class="fail-icon"><CircleClose /></el-icon>
@@ -157,15 +157,18 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Refresh, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import axios from 'axios'
 
+const { t } = useI18n()
+
 // 响应式状态
 const windowWidth = ref(window.innerWidth)
 const isMobile = computed(() => windowWidth.value < 768)
-const paginationLayout = computed(() => 
+const paginationLayout = computed(() =>
   isMobile.value ? 'prev, pager, next' : 'total, sizes, prev, pager, next, jumper'
 )
 
@@ -218,24 +221,24 @@ const filters = reactive({
 
 // 操作类型标签映射
 const actionLabels: Record<string, string> = {
-  login: '登录成功',
-  login_failed: '登录失败',
-  logout: '登出',
-  password_reset: '重置密码',
-  system_install: '系统安装',
-  bucket_create: '创建桶',
-  bucket_delete: '删除桶',
-  bucket_set_public: '设为公开',
-  bucket_set_private: '设为私有',
-  apikey_create: '创建密钥',
-  apikey_delete: '删除密钥',
-  apikey_update: '更新密钥',
-  apikey_reset_secret: '重置Secret',
-  apikey_set_perm: '设置权限',
-  apikey_del_perm: '删除权限',
-  object_upload: '上传对象',
-  object_delete: '删除对象',
-  batch_delete: '批量删除'
+  login: 'auditLogs.actions.login',
+  login_failed: 'auditLogs.actions.loginFailed',
+  logout: 'auditLogs.actions.logout',
+  password_reset: 'auditLogs.actions.passwordReset',
+  system_install: 'auditLogs.actions.systemInstall',
+  bucket_create: 'auditLogs.actions.bucketCreate',
+  bucket_delete: 'auditLogs.actions.bucketDelete',
+  bucket_set_public: 'auditLogs.actions.bucketSetPublic',
+  bucket_set_private: 'auditLogs.actions.bucketSetPrivate',
+  apikey_create: 'auditLogs.actions.apikeyCreate',
+  apikey_delete: 'auditLogs.actions.apikeyDelete',
+  apikey_update: 'auditLogs.actions.apikeyUpdate',
+  apikey_reset_secret: 'auditLogs.actions.apikeyResetSecret',
+  apikey_set_perm: 'auditLogs.actions.apikeySetPerm',
+  apikey_del_perm: 'auditLogs.actions.apikeyDelPerm',
+  object_upload: 'auditLogs.actions.objectUpload',
+  object_delete: 'auditLogs.actions.objectDelete',
+  batch_delete: 'auditLogs.actions.batchDelete'
 }
 
 // 操作类型颜色映射
@@ -258,7 +261,8 @@ const actionTypes: Record<string, string> = {
 }
 
 function getActionLabel(action: string): string {
-  return actionLabels[action] || action
+  const key = actionLabels[action]
+  return key ? t(key) : action
 }
 
 function getActionType(action: string): string {
@@ -301,7 +305,7 @@ async function loadLogs() {
     const params = new URLSearchParams()
     params.append('page', String(pagination.page))
     params.append('limit', String(pagination.limit))
-    
+
     if (filters.action) params.append('action', filters.action)
     if (filters.actor) params.append('actor', filters.actor)
     if (filters.ip) params.append('ip', filters.ip)
@@ -311,11 +315,11 @@ async function loadLogs() {
     const response = await axios.get(`${auth.endpoint}/api/admin/audit?${params}`, {
       headers: getHeaders()
     })
-    
+
     logs.value = response.data.logs || []
     pagination.total = response.data.total || 0
   } catch (error: any) {
-    ElMessage.error('加载审计日志失败: ' + (error.response?.data?.message || error.message))
+    ElMessage.error(t('auditLogs.loadFailed') + ': ' + (error.response?.data?.message || error.message))
   } finally {
     loading.value = false
   }
@@ -330,7 +334,7 @@ async function loadStats() {
     stats.today = response.data.today || 0
     stats.failed = response.data.failed || 0
   } catch (error) {
-    console.error('加载统计失败:', error)
+    console.error('Failed to load stats:', error)
   }
 }
 

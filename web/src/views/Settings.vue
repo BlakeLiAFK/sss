@@ -2,8 +2,8 @@
   <div class="page-container">
     <div class="page-header">
       <div class="page-title">
-        <h1>系统设置</h1>
-        <p class="page-subtitle">管理存储配置与安全选项</p>
+        <h1>{{ t('settings.title') }}</h1>
+        <p class="page-subtitle">{{ t('settings.subtitle') }}</p>
       </div>
     </div>
 
@@ -12,23 +12,23 @@
       <div class="settings-card">
         <div class="card-header">
           <el-icon class="card-icon"><Monitor /></el-icon>
-          <h3>运行时参数</h3>
-          <el-tag size="small" type="info">只读</el-tag>
+          <h3>{{ t('settings.runtimeParams') }}</h3>
+          <el-tag size="small" type="info">{{ t('settings.readonly') }}</el-tag>
         </div>
         <div class="card-body">
           <div class="info-item">
-            <span class="info-label">监听地址</span>
+            <span class="info-label">{{ t('settings.listenAddress') }}</span>
             <span class="info-value mono">{{ settings.runtime.host }}:{{ settings.runtime.port }}</span>
           </div>
           <div class="info-item">
-            <span class="info-label">数据目录</span>
+            <span class="info-label">{{ t('settings.dataDir') }}</span>
             <span class="info-value mono">{{ settings.runtime.data_path }}</span>
           </div>
           <div class="info-item">
-            <span class="info-label">数据库</span>
+            <span class="info-label">{{ t('settings.database') }}</span>
             <span class="info-value mono">{{ settings.runtime.db_path }}</span>
           </div>
-          <p class="setting-hint">这些参数通过命令行设置，需重启服务才能修改</p>
+          <p class="setting-hint">{{ t('settings.runtimeHint') }}</p>
         </div>
       </div>
 
@@ -36,32 +36,32 @@
       <div class="settings-card">
         <div class="card-header">
           <el-icon class="card-icon"><FolderOpened /></el-icon>
-          <h3>存储配置</h3>
+          <h3>{{ t('settings.storageConfig') }}</h3>
         </div>
         <div class="card-body">
           <div class="setting-item">
-            <label>S3 区域</label>
+            <label>{{ t('settings.s3Region') }}</label>
             <el-input v-model="settings.storage.region" placeholder="us-east-1" :disabled="!editing" />
           </div>
           <div class="setting-item">
-            <label>最大对象大小</label>
+            <label>{{ t('settings.maxObjectSize') }}</label>
             <el-select v-model="maxObjectSizeOption" :disabled="!editing" style="width: 100%">
               <el-option label="1 GB" :value="1073741824" />
               <el-option label="2 GB" :value="2147483648" />
               <el-option label="5 GB" :value="5368709120" />
               <el-option label="10 GB" :value="10737418240" />
             </el-select>
-            <span class="setting-hint">单个对象允许的最大大小</span>
+            <span class="setting-hint">{{ t('settings.maxObjectSizeHint') }}</span>
           </div>
           <div class="setting-item">
-            <label>预签名上传限制</label>
+            <label>{{ t('settings.presignUploadLimit') }}</label>
             <el-select v-model="maxUploadSizeOption" :disabled="!editing" style="width: 100%">
               <el-option label="100 MB" :value="104857600" />
               <el-option label="500 MB" :value="524288000" />
               <el-option label="1 GB" :value="1073741824" />
               <el-option label="2 GB" :value="2147483648" />
             </el-select>
-            <span class="setting-hint">预签名 URL 上传的最大大小</span>
+            <span class="setting-hint">{{ t('settings.presignUploadLimitHint') }}</span>
           </div>
         </div>
       </div>
@@ -70,20 +70,20 @@
       <div class="settings-card">
         <div class="card-header">
           <el-icon class="card-icon"><InfoFilled /></el-icon>
-          <h3>系统信息</h3>
+          <h3>{{ t('settings.systemInfo') }}</h3>
         </div>
         <div class="card-body">
           <div class="info-item">
-            <span class="info-label">版本</span>
+            <span class="info-label">{{ t('settings.version') }}</span>
             <span class="info-value">{{ settings.system.version || '-' }}</span>
           </div>
           <div class="info-item">
-            <span class="info-label">安装时间</span>
+            <span class="info-label">{{ t('settings.installedAt') }}</span>
             <span class="info-value">{{ formatDate(settings.system.installed_at) }}</span>
           </div>
           <div class="info-item">
-            <span class="info-label">状态</span>
-            <el-tag type="success" size="small">运行中</el-tag>
+            <span class="info-label">{{ t('settings.status') }}</span>
+            <el-tag type="success" size="small">{{ t('settings.running') }}</el-tag>
           </div>
         </div>
       </div>
@@ -92,26 +92,26 @@
       <div class="settings-card">
         <div class="card-header">
           <el-icon class="card-icon"><Lock /></el-icon>
-          <h3>安全设置</h3>
+          <h3>{{ t('settings.securitySettings') }}</h3>
         </div>
         <div class="card-body">
           <div class="setting-item">
-            <label>CORS 允许来源</label>
+            <label>{{ t('settings.corsOrigin') }}</label>
             <el-input v-model="settings.security.cors_origin" placeholder="*" :disabled="!editing" />
-            <span class="setting-hint">允许跨域请求的来源，* 表示允许所有来源</span>
+            <span class="setting-hint">{{ t('settings.corsOriginHint') }}</span>
           </div>
           <div class="setting-item">
-            <label>预签名 URL 协议</label>
+            <label>{{ t('settings.presignScheme') }}</label>
             <el-select v-model="settings.security.presign_scheme" :disabled="!editing" style="width: 100%">
               <el-option label="HTTP" value="http" />
               <el-option label="HTTPS" value="https" />
             </el-select>
-            <span class="setting-hint">生成预签名 URL 时使用的协议</span>
+            <span class="setting-hint">{{ t('settings.presignSchemeHint') }}</span>
           </div>
           <div class="setting-item" style="margin-top: 16px;">
             <el-button type="primary" @click="showPasswordDialog = true" class="full-width-btn">
               <el-icon><Key /></el-icon>
-              修改管理员密码
+              {{ t('settings.changePassword') }}
             </el-button>
           </div>
         </div>
@@ -123,35 +123,35 @@
       <template v-if="!editing">
         <el-button type="primary" @click="editing = true" class="primary-btn">
           <el-icon><Edit /></el-icon>
-          编辑设置
+          {{ t('settings.editSettings') }}
         </el-button>
       </template>
       <template v-else>
-        <el-button @click="cancelEdit">取消</el-button>
+        <el-button @click="cancelEdit">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="saveSettings" :loading="saving" class="primary-btn">
           <el-icon><Check /></el-icon>
-          保存设置
+          {{ t('settings.saveSettings') }}
         </el-button>
       </template>
     </div>
 
     <!-- 修改密码对话框 -->
-    <el-dialog v-model="showPasswordDialog" title="修改管理员密码" width="400px" :close-on-click-modal="false">
+    <el-dialog v-model="showPasswordDialog" :title="t('settings.changePassword')" width="400px" :close-on-click-modal="false">
       <el-form :model="passwordForm" label-position="top">
-        <el-form-item label="当前密码" required>
-          <el-input v-model="passwordForm.oldPassword" type="password" show-password placeholder="输入当前密码" />
+        <el-form-item :label="t('settings.currentPassword')" required>
+          <el-input v-model="passwordForm.oldPassword" type="password" show-password :placeholder="t('settings.enterCurrentPassword')" />
         </el-form-item>
-        <el-form-item label="新密码" required>
-          <el-input v-model="passwordForm.newPassword" type="password" show-password placeholder="至少6个字符" />
+        <el-form-item :label="t('settings.newPassword')" required>
+          <el-input v-model="passwordForm.newPassword" type="password" show-password :placeholder="t('settings.atLeast6Chars')" />
         </el-form-item>
-        <el-form-item label="确认新密码" required>
-          <el-input v-model="passwordForm.confirmPassword" type="password" show-password placeholder="再次输入新密码" />
+        <el-form-item :label="t('settings.confirmNewPassword')" required>
+          <el-input v-model="passwordForm.confirmPassword" type="password" show-password :placeholder="t('settings.enterNewPasswordAgain')" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showPasswordDialog = false">取消</el-button>
+        <el-button @click="showPasswordDialog = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="changePassword" :loading="changingPassword" class="primary-btn">
-          确认修改
+          {{ t('settings.confirmChange') }}
         </el-button>
       </template>
     </el-dialog>
@@ -160,11 +160,13 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Monitor, FolderOpened, InfoFilled, Lock, Key, Edit, Check } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import axios from 'axios'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 
 // 状态
@@ -174,7 +176,7 @@ const saving = ref(false)
 const showPasswordDialog = ref(false)
 const changingPassword = ref(false)
 
-// 设置数据（匹配新 API 结构）
+// 设置数据
 const settings = reactive({
   runtime: {
     host: '',
@@ -240,7 +242,7 @@ async function loadSettings() {
     Object.assign(settings.system, response.data.system)
     originalSettings.value = JSON.parse(JSON.stringify(settings))
   } catch (error: any) {
-    ElMessage.error('加载设置失败: ' + (error.response?.data?.message || error.message))
+    ElMessage.error(t('settings.loadFailed') + ': ' + (error.response?.data?.message || error.message))
   } finally {
     loading.value = false
   }
@@ -257,11 +259,9 @@ function cancelEdit() {
 async function saveSettings() {
   saving.value = true
   try {
-    // 发送可修改的字段
     const payload: any = {}
 
     if (originalSettings.value) {
-      // 存储配置
       if (settings.storage.region !== originalSettings.value.storage.region) {
         payload.region = settings.storage.region
       }
@@ -271,7 +271,6 @@ async function saveSettings() {
       if (settings.storage.max_upload_size !== originalSettings.value.storage.max_upload_size) {
         payload.max_upload_size = settings.storage.max_upload_size
       }
-      // 安全配置
       if (settings.security.cors_origin !== originalSettings.value.security.cors_origin) {
         payload.cors_origin = settings.security.cors_origin
       }
@@ -286,9 +285,9 @@ async function saveSettings() {
 
     originalSettings.value = JSON.parse(JSON.stringify(settings))
     editing.value = false
-    ElMessage.success('设置已保存')
+    ElMessage.success(t('settings.saveSuccess'))
   } catch (error: any) {
-    ElMessage.error('保存失败: ' + (error.response?.data?.message || error.message))
+    ElMessage.error(t('settings.saveFailed') + ': ' + (error.response?.data?.message || error.message))
   } finally {
     saving.value = false
   }
@@ -296,15 +295,15 @@ async function saveSettings() {
 
 async function changePassword() {
   if (!passwordForm.oldPassword || !passwordForm.newPassword) {
-    ElMessage.warning('请填写所有字段')
+    ElMessage.warning(t('settings.fillAllFields'))
     return
   }
   if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-    ElMessage.warning('两次输入的新密码不一致')
+    ElMessage.warning(t('settings.passwordMismatch'))
     return
   }
   if (passwordForm.newPassword.length < 6) {
-    ElMessage.warning('新密码至少6个字符')
+    ElMessage.warning(t('settings.passwordTooShort'))
     return
   }
 
@@ -316,14 +315,14 @@ async function changePassword() {
     }, {
       headers: getHeaders()
     })
-    
-    ElMessage.success('密码修改成功')
+
+    ElMessage.success(t('settings.passwordChanged'))
     showPasswordDialog.value = false
     passwordForm.oldPassword = ''
     passwordForm.newPassword = ''
     passwordForm.confirmPassword = ''
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || '修改失败')
+    ElMessage.error(error.response?.data?.message || t('settings.changeFailed'))
   } finally {
     changingPassword.value = false
   }
@@ -473,7 +472,6 @@ onMounted(() => {
   border-color: #d35400;
 }
 
-/* 响应式 */
 @media (max-width: 768px) {
   .settings-grid {
     grid-template-columns: 1fr;

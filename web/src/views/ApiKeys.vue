@@ -2,13 +2,13 @@
   <div class="page-container">
     <div class="page-header">
       <div class="page-title">
-        <h1>API 密钥</h1>
-        <p class="page-subtitle">管理 S3 API 访问凭证</p>
+        <h1>{{ t('apiKeys.title') }}</h1>
+        <p class="page-subtitle">{{ t('apiKeys.subtitle') }}</p>
       </div>
       <div class="page-actions">
         <el-button type="primary" @click="showCreateDialog" class="primary-btn">
           <el-icon><Plus /></el-icon>
-          <span class="btn-text">新建</span>
+          <span class="btn-text">{{ t('apiKeys.create') }}</span>
         </el-button>
       </div>
     </div>
@@ -35,17 +35,17 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="Description" min-width="150">
+        <el-table-column prop="description" :label="t('apiKeys.description')" min-width="150">
           <template #default="{ row }">
             <span class="desc-text">{{ row.description || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="Created" width="160">
+        <el-table-column prop="created_at" :label="t('apiKeys.created')" width="160">
           <template #default="{ row }">
             <span class="date-text">{{ formatDate(row.created_at) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="enabled" label="Status" width="100" align="center">
+        <el-table-column prop="enabled" :label="t('apiKeys.status')" width="100" align="center">
           <template #default="{ row }">
             <el-switch
               v-model="row.enabled"
@@ -55,7 +55,7 @@
             />
           </template>
         </el-table-column>
-        <el-table-column label="Permissions" min-width="220">
+        <el-table-column :label="t('apiKeys.permissions')" min-width="220">
           <template #default="{ row }">
             <div class="permissions-list">
               <el-tag
@@ -68,19 +68,19 @@
                 <span class="perm-bucket">{{ perm.bucket_name }}</span>
                 <span class="perm-flags">{{ perm.can_read ? 'R' : '' }}{{ perm.can_write ? 'W' : '' }}</span>
               </el-tag>
-              <span v-if="!row.permissions?.length" class="no-perm">No permissions</span>
+              <span v-if="!row.permissions?.length" class="no-perm">{{ t('apiKeys.noPermissions') }}</span>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="Actions" width="260" align="center" fixed="right">
+        <el-table-column :label="t('common.actions')" width="260" align="center" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="showPermDialog(row)">
               <el-icon><Setting /></el-icon>
-              Permissions
+              {{ t('apiKeys.permissions') }}
             </el-button>
             <el-button size="small" type="warning" text @click="resetSecret(row)">
               <el-icon><Refresh /></el-icon>
-              Reset
+              {{ t('apiKeys.reset') }}
             </el-button>
             <el-button size="small" type="danger" text @click="deleteKey(row)">
               <el-icon><Delete /></el-icon>
@@ -89,9 +89,9 @@
         </el-table-column>
       </el-table>
 
-      <el-empty v-if="!loading && apiKeys.length === 0" description="No API keys yet">
+      <el-empty v-if="!loading && apiKeys.length === 0" :description="t('apiKeys.noKeys')">
         <el-button type="primary" @click="showCreateDialog">
-          Create your first API key
+          {{ t('apiKeys.createFirst') }}
         </el-button>
       </el-empty>
     </div>
@@ -99,24 +99,24 @@
     <!-- Create API Key Dialog -->
     <el-dialog
       v-model="createDialogVisible"
-      title="Create API Key"
+      :title="t('apiKeys.createTitle')"
       width="450px"
       :close-on-click-modal="false"
     >
       <el-form :model="createForm" label-position="top">
-        <el-form-item label="Description">
+        <el-form-item :label="t('apiKeys.description')">
           <el-input
             v-model="createForm.description"
-            placeholder="e.g., Production Server, Development"
+            :placeholder="t('apiKeys.descriptionPlaceholder')"
             size="large"
           />
-          <div class="form-hint">A friendly name to identify this key</div>
+          <div class="form-hint">{{ t('apiKeys.descriptionHint') }}</div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createDialogVisible = false">Cancel</el-button>
+        <el-button @click="createDialogVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" class="primary-btn" @click="createKey" :loading="creating">
-          Create Key
+          {{ t('apiKeys.createKey') }}
         </el-button>
       </template>
     </el-dialog>
@@ -136,9 +136,9 @@
         class="secret-warning"
       >
         <template #title>
-          <strong>Save your Secret Access Key now!</strong>
+          <strong>{{ t('apiKeys.saveSecretNow') }}</strong>
         </template>
-        This is the only time you'll be able to see it. Store it securely.
+        {{ t('apiKeys.secretOnlyOnce') }}
       </el-alert>
 
       <div class="secret-info">
@@ -164,7 +164,7 @@
 
       <template #footer>
         <el-button type="primary" class="primary-btn" @click="secretDialogVisible = false">
-          I've saved my key
+          {{ t('apiKeys.savedMyKey') }}
         </el-button>
       </template>
     </el-dialog>
@@ -172,7 +172,7 @@
     <!-- Permissions Dialog -->
     <el-dialog
       v-model="permDialogVisible"
-      title="Manage Permissions"
+      :title="t('apiKeys.managePermissions')"
       width="600px"
       :close-on-click-modal="false"
     >
@@ -183,21 +183,21 @@
         </div>
 
         <div class="perm-section">
-          <h4>Current Permissions</h4>
+          <h4>{{ t('apiKeys.currentPermissions') }}</h4>
           <el-table
             :data="selectedKey.permissions"
             size="small"
             class="perm-table"
             v-if="selectedKey.permissions?.length"
           >
-            <el-table-column prop="bucket_name" label="Bucket" />
-            <el-table-column label="Read" width="80" align="center">
+            <el-table-column prop="bucket_name" :label="t('apiKeys.bucket')" />
+            <el-table-column :label="t('apiKeys.read')" width="80" align="center">
               <template #default="{ row }">
                 <el-icon v-if="row.can_read" color="#10b981" :size="18"><CircleCheck /></el-icon>
                 <el-icon v-else color="#94a3b8" :size="18"><CircleClose /></el-icon>
               </template>
             </el-table-column>
-            <el-table-column label="Write" width="80" align="center">
+            <el-table-column :label="t('apiKeys.write')" width="80" align="center">
               <template #default="{ row }">
                 <el-icon v-if="row.can_write" color="#10b981" :size="18"><CircleCheck /></el-icon>
                 <el-icon v-else color="#94a3b8" :size="18"><CircleClose /></el-icon>
@@ -206,22 +206,22 @@
             <el-table-column width="80" align="center">
               <template #default="{ row }">
                 <el-button size="small" type="danger" text @click="removePerm(row.bucket_name)">
-                  Remove
+                  {{ t('apiKeys.remove') }}
                 </el-button>
               </template>
             </el-table-column>
           </el-table>
-          <div v-else class="no-perm-msg">No permissions configured</div>
+          <div v-else class="no-perm-msg">{{ t('apiKeys.noPermissionsConfigured') }}</div>
         </div>
 
         <el-divider />
 
         <div class="perm-section">
-          <h4>Add Permission</h4>
+          <h4>{{ t('apiKeys.addPermission') }}</h4>
           <el-form :model="permForm" inline class="add-perm-form">
-            <el-form-item label="Bucket">
-              <el-select v-model="permForm.bucket_name" placeholder="Select bucket" style="width: 180px">
-                <el-option label="* (All Buckets)" value="*" />
+            <el-form-item :label="t('apiKeys.bucket')">
+              <el-select v-model="permForm.bucket_name" :placeholder="t('apiKeys.selectBucket')" style="width: 180px">
+                <el-option :label="t('apiKeys.allBuckets')" value="*" />
                 <el-option
                   v-for="bucket in buckets"
                   :key="bucket.name"
@@ -230,22 +230,22 @@
                 />
               </el-select>
             </el-form-item>
-            <el-form-item label="Read">
+            <el-form-item :label="t('apiKeys.read')">
               <el-switch v-model="permForm.can_read" />
             </el-form-item>
-            <el-form-item label="Write">
+            <el-form-item :label="t('apiKeys.write')">
               <el-switch v-model="permForm.can_write" />
             </el-form-item>
             <el-form-item>
               <el-button type="primary" class="primary-btn" @click="addPerm" :loading="addingPerm">
-                Add
+                {{ t('apiKeys.add') }}
               </el-button>
             </el-form-item>
           </el-form>
         </div>
       </div>
       <template #footer>
-        <el-button @click="permDialogVisible = false">Close</el-button>
+        <el-button @click="permDialogVisible = false">{{ t('common.close') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -253,10 +253,13 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, CopyDocument, Setting, Delete, CircleCheck, CircleClose, Refresh } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import axios from 'axios'
+
+const { t } = useI18n()
 
 interface Permission {
   access_key_id: string
@@ -293,7 +296,7 @@ const permDialogVisible = ref(false)
 
 const createForm = reactive({ description: '' })
 const newKey = reactive({ access_key_id: '', secret_access_key: '' })
-const secretDialogTitle = ref('API Key Created') // 对话框标题：创建或重置
+const secretDialogTitle = ref(t('apiKeys.keyCreated'))
 const selectedKey = ref<APIKey | null>(null)
 const permForm = reactive({
   bucket_name: '',
@@ -313,7 +316,7 @@ async function loadApiKeys() {
     })
     apiKeys.value = response.data || []
   } catch (e: any) {
-    ElMessage.error('Failed to load API keys: ' + e.message)
+    ElMessage.error(t('apiKeys.loadFailed') + ': ' + e.message)
   } finally {
     loading.value = false
   }
@@ -343,13 +346,13 @@ async function createKey() {
     })
     newKey.access_key_id = response.data.access_key_id
     newKey.secret_access_key = response.data.secret_access_key
-    secretDialogTitle.value = 'API Key Created'
+    secretDialogTitle.value = t('apiKeys.keyCreated')
     createDialogVisible.value = false
     secretDialogVisible.value = true
     await loadApiKeys()
-    ElMessage.success('API Key created')
+    ElMessage.success(t('apiKeys.createSuccess'))
   } catch (e: any) {
-    ElMessage.error('Failed to create API key: ' + e.message)
+    ElMessage.error(t('apiKeys.createFailed') + ': ' + e.message)
   } finally {
     creating.value = false
   }
@@ -358,11 +361,11 @@ async function createKey() {
 async function resetSecret(key: APIKey) {
   try {
     await ElMessageBox.confirm(
-      `Are you sure you want to reset the Secret Key for this API Key? The old secret will be invalidated immediately.`,
-      'Reset Secret Key',
+      t('apiKeys.resetConfirm'),
+      t('apiKeys.resetSecretKey'),
       {
         type: 'warning',
-        confirmButtonText: 'Reset',
+        confirmButtonText: t('apiKeys.reset'),
         confirmButtonClass: 'el-button--warning'
       }
     )
@@ -373,13 +376,13 @@ async function resetSecret(key: APIKey) {
     )
     newKey.access_key_id = response.data.access_key_id
     newKey.secret_access_key = response.data.secret_access_key
-    secretDialogTitle.value = 'Secret Key Reset'
+    secretDialogTitle.value = t('apiKeys.secretKeyReset')
     secretDialogVisible.value = true
     await loadApiKeys()
-    ElMessage.success('Secret Key has been reset')
+    ElMessage.success(t('apiKeys.resetSuccess'))
   } catch (e: any) {
     if (e !== 'cancel') {
-      ElMessage.error('Failed to reset secret key: ' + e.message)
+      ElMessage.error(t('apiKeys.resetFailed') + ': ' + e.message)
     }
   }
 }
@@ -391,21 +394,21 @@ async function toggleEnabled(key: APIKey) {
     }, {
       headers: getHeaders()
     })
-    ElMessage.success(key.enabled ? 'API Key enabled' : 'API Key disabled')
+    ElMessage.success(key.enabled ? t('apiKeys.enabled') : t('apiKeys.disabled'))
   } catch (e: any) {
     key.enabled = !key.enabled
-    ElMessage.error('Failed to update API key: ' + e.message)
+    ElMessage.error(t('apiKeys.updateFailed') + ': ' + e.message)
   }
 }
 
 async function deleteKey(key: APIKey) {
   try {
     await ElMessageBox.confirm(
-      `Are you sure you want to delete this API Key? This action cannot be undone.`,
-      'Delete API Key',
+      t('apiKeys.deleteConfirm'),
+      t('apiKeys.deleteKey'),
       {
         type: 'warning',
-        confirmButtonText: 'Delete',
+        confirmButtonText: t('common.delete'),
         confirmButtonClass: 'el-button--danger'
       }
     )
@@ -413,10 +416,10 @@ async function deleteKey(key: APIKey) {
       headers: getHeaders()
     })
     await loadApiKeys()
-    ElMessage.success('API Key deleted')
+    ElMessage.success(t('apiKeys.deleteSuccess'))
   } catch (e: any) {
     if (e !== 'cancel') {
-      ElMessage.error('Failed to delete API key: ' + e.message)
+      ElMessage.error(t('apiKeys.deleteFailed') + ': ' + e.message)
     }
   }
 }
@@ -431,7 +434,7 @@ function showPermDialog(key: APIKey) {
 
 async function addPerm() {
   if (!selectedKey.value || !permForm.bucket_name) {
-    ElMessage.warning('Please select a bucket')
+    ElMessage.warning(t('apiKeys.pleaseSelectBucket'))
     return
   }
 
@@ -447,9 +450,9 @@ async function addPerm() {
     if (idx >= 0) {
       apiKeys.value[idx] = response.data
     }
-    ElMessage.success('Permission added')
+    ElMessage.success(t('apiKeys.permissionAdded'))
   } catch (e: any) {
-    ElMessage.error('Failed to add permission: ' + e.message)
+    ElMessage.error(t('apiKeys.addPermissionFailed') + ': ' + e.message)
   } finally {
     addingPerm.value = false
   }
@@ -468,9 +471,9 @@ async function removePerm(bucketName: string) {
     if (idx >= 0) {
       apiKeys.value[idx] = response.data
     }
-    ElMessage.success('Permission removed')
+    ElMessage.success(t('apiKeys.permissionRemoved'))
   } catch (e: any) {
-    ElMessage.error('Failed to remove permission: ' + e.message)
+    ElMessage.error(t('apiKeys.removePermissionFailed') + ': ' + e.message)
   }
 }
 
@@ -490,11 +493,9 @@ function getPermTagType(perm: Permission) {
 
 async function copyToClipboard(text: string) {
   try {
-    // 优先使用 Clipboard API（需要 HTTPS 或 localhost）
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text)
     } else {
-      // 降级方案：使用临时 textarea
       const textarea = document.createElement('textarea')
       textarea.value = text
       textarea.style.position = 'fixed'
@@ -504,9 +505,9 @@ async function copyToClipboard(text: string) {
       document.execCommand('copy')
       document.body.removeChild(textarea)
     }
-    ElMessage.success('Copied to clipboard')
+    ElMessage.success(t('common.copied'))
   } catch {
-    ElMessage.error('Failed to copy')
+    ElMessage.error(t('common.copyFailed'))
   }
 }
 
