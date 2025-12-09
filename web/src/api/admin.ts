@@ -258,3 +258,145 @@ export async function validateMigrateConfig(config: MigrateConfig): Promise<{ va
   })
   return resp.data
 }
+
+// ============================================================
+// 对象存储操作（替代 S3 API，使用管理接口）
+// ============================================================
+
+// 桶信息
+export interface Bucket {
+  name: string
+  creation_date: string
+  is_public: boolean
+}
+
+// 对象信息
+export interface S3Object {
+  key: string
+  size: number
+  last_modified: string
+  etag: string
+}
+
+// 列出所有桶
+export async function listBuckets(): Promise<Bucket[]> {
+  const resp = await axios.get(`${getBaseUrl()}/api/admin/buckets`, {
+    headers: getAdminHeaders()
+  })
+  return resp.data
+}
+
+// 列出对象
+export async function listObjects(bucket: string, prefix = '', marker = ''): Promise<{ objects: S3Object[], is_truncated: boolean, next_marker: string }> {
+  const params: Record<string, string> = {}
+  if (prefix) params.prefix = prefix
+  if (marker) params.marker = marker
+
+  const resp = await axios.get(`${getBaseUrl()}/api/admin/buckets/${bucket}/objects`, {
+    headers: getAdminHeaders(),
+    params
+  })
+  return {
+    objects: resp.data.objects || [],
+    is_truncated: resp.data.is_truncated || false,
+    next_marker: resp.data.next_marker || ''
+  }
+}
+
+// 删除单个对象
+export async function deleteObject(bucket: string, key: string): Promise<void> {
+  await axios.delete(`${getBaseUrl()}/api/admin/buckets/${bucket}/objects`, {
+    headers: getAdminHeaders(),
+    params: { key }
+  })
+}
+
+// 上传对象
+export async function uploadObject(bucket: string, key: string, file: File, onProgress?: (percent: number) => void): Promise<void> {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  await axios.post(`${getBaseUrl()}/api/admin/buckets/${bucket}/upload`, formData, {
+    headers: {
+      'X-Admin-Token': useAuthStore().adminToken || ''
+    },
+    params: { key },
+    onUploadProgress: (e) => {
+      if (onProgress && e.total) {
+        onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+    }
+  })
+}
+
+// 复制对象（用于重命名）
+export async function copyObject(bucket: string, sourceKey: string, destKey: string): Promise<void> {
+  await axios.post(`${getBaseUrl()}/api/admin/buckets/${bucket}/copy`, {
+    source_key: sourceKey,
+    dest_key: destKey
+  }, {
+    headers: getAdminHeaders()
+  })
+}
+
+// 搜索对象
+export async function searchObjects(bucket: string, keyword: string): Promise<{ objects: S3Object[], count: number }> {
+  const resp = await axios.get(`${getBaseUrl()}/api/admin/buckets/${bucket}/search`, {
+    headers: getAdminHeaders(),
+    params: { q: keyword }
+  })
+  return {
+    objects: resp.data.objects || [],
+    count: resp.data.count || 0
+  }
+}
+
+// 获取桶公开状态
+export async function getBucketPublic(bucket: string): Promise<boolean> {
+  const resp = await axios.get(`${getBaseUrl()}/api/admin/buckets/${bucket}/public`, {
+    headers: getAdminHeaders()
+  })
+  return resp.data.is_public
+}
+
+// 获取对象下载 URL
+export function getObjectUrl(bucket: string, key: string): string {
+  return `${getBaseUrl()}/${bucket}/${key}`
+}
+
+// 预签名URL选项
+interface PresignOptions {
+  method?: string
+  bucket: string
+  key: string
+  expiresMinutes?: number
+  maxSizeMB?: number
+  contentType?: string
+}
+
+// 预签名URL响应
+interface PresignResponse {
+  url: string
+  method: string
+  expires: number
+}
+
+// 生成预签名URL
+export async function generatePresignedUrl(options: PresignOptions): Promise<PresignResponse> {
+  const requestBody = {
+    method: options.method || 'PUT',
+    bucket: options.bucket,
+    key: options.key,
+    expiresMinutes: options.expiresMinutes || 60,
+    maxSizeMB: options.maxSizeMB || 0,
+    contentType: options.contentType || ''
+  }
+
+  const resp = await axios.post(`${getBaseUrl()}/api/presign`, requestBody, {
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+
+  return resp.data
+}

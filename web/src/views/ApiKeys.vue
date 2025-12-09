@@ -115,7 +115,7 @@
       </el-form>
       <template #footer>
         <el-button @click="createDialogVisible = false">Cancel</el-button>
-        <el-button type="primary" @click="createKey" :loading="creating">
+        <el-button type="primary" class="primary-btn" @click="createKey" :loading="creating">
           Create Key
         </el-button>
       </template>
@@ -163,7 +163,7 @@
       </div>
 
       <template #footer>
-        <el-button type="primary" @click="secretDialogVisible = false">
+        <el-button type="primary" class="primary-btn" @click="secretDialogVisible = false">
           I've saved my key
         </el-button>
       </template>
@@ -237,7 +237,7 @@
               <el-switch v-model="permForm.can_write" />
             </el-form-item>
             <el-form-item>
-              <el-button type="primary" @click="addPerm" :loading="addingPerm">
+              <el-button type="primary" class="primary-btn" @click="addPerm" :loading="addingPerm">
                 Add
               </el-button>
             </el-form-item>
@@ -490,7 +490,20 @@ function getPermTagType(perm: Permission) {
 
 async function copyToClipboard(text: string) {
   try {
-    await navigator.clipboard.writeText(text)
+    // 优先使用 Clipboard API（需要 HTTPS 或 localhost）
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      // 降级方案：使用临时 textarea
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
     ElMessage.success('Copied to clipboard')
   } catch {
     ElMessage.error('Failed to copy')

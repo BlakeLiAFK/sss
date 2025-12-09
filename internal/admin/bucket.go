@@ -181,6 +181,10 @@ func (h *Handler) handleAdminBucketOps(w http.ResponseWriter, r *http.Request, p
 			h.adminUploadObject(w, r, bucketName)
 		case "download":
 			h.adminDownloadObject(w, r, bucketName)
+		case "copy":
+			h.adminCopyObject(w, r, bucketName)
+		case "search":
+			h.adminSearchObjects(w, r, bucketName)
 		case "batch/delete":
 			h.batchDeleteObjects(w, r, bucketName)
 		case "batch/download":

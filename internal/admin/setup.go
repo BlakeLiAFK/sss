@@ -86,15 +86,10 @@ func (h *Handler) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 		installedAt, _ = h.metadata.GetSetting(storage.SettingSystemInstalledAt)
 	}
 
-	version, _ := h.metadata.GetSetting(storage.SettingSystemVersion)
-	if version == "" {
-		version = "1.1.0"
-	}
-
 	utils.WriteJSONResponse(w, SystemStatusResponse{
 		Installed:   installed,
 		InstalledAt: installedAt,
-		Version:     version,
+		Version:     config.Version, // 直接使用编译时常量
 	})
 }
 
@@ -165,9 +160,6 @@ func (h *Handler) handleInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 获取生成的 API Key
-	accessKeyID, secretAccessKey := h.metadata.GetAuthConfig()
-
 	// 重新加载配置到全局
 	ReloadConfigFromDB(h.metadata)
 
@@ -178,10 +170,8 @@ func (h *Handler) handleInstall(w http.ResponseWriter, r *http.Request) {
 	})
 
 	utils.WriteJSONResponse(w, SetupResponse{
-		Success:         true,
-		Message:         "安装成功",
-		AccessKeyID:     accessKeyID,
-		SecretAccessKey: secretAccessKey,
+		Success: true,
+		Message: "安装成功",
 	})
 }
 

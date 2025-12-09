@@ -177,6 +177,121 @@ func (h *Handler) adminUploadObject(w http.ResponseWriter, r *http.Request, buck
 	})
 }
 
+// CopyObjectRequest 复制对象请求
+type CopyObjectRequest struct {
+	SourceKey string `json:"source_key"` // 源对象键
+	DestKey   string `json:"dest_key"`   // 目标对象键
+}
+
+// adminCopyObject 复制对象（用于重命名）
+// POST /api/admin/buckets/{bucket}/copy
+func (h *Handler) adminCopyObject(w http.ResponseWriter, r *http.Request, bucketName string) {
+	if r.Method != http.MethodPost {
+		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		return
+	}
+
+	var req CopyObjectRequest
+	if err := utils.ParseJSONBody(r, &req); err != nil {
+		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		return
+	}
+
+	if req.SourceKey == "" || req.DestKey == "" {
+		utils.WriteErrorResponse(w, "MissingParameter", "source_key and dest_key are required", http.StatusBadRequest)
+		return
+	}
+
+	// 安全检查：防止路径遍历
+	if strings.Contains(req.SourceKey, "..") || strings.Contains(req.DestKey, "..") {
+		utils.WriteErrorResponse(w, "InvalidParameter", "Invalid key", http.StatusBadRequest)
+		return
+	}
+
+	// 获取源对象
+	srcObj, err := h.metadata.GetObject(bucketName, req.SourceKey)
+	if err != nil {
+		utils.Error("get source object failed", "error", err)
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		return
+	}
+	if srcObj == nil {
+		utils.WriteError(w, utils.ErrNoSuchKey, http.StatusNotFound, "")
+		return
+	}
+
+	// 复制文件
+	newStoragePath, newETag, err := h.filestore.CopyObject(srcObj.StoragePath, bucketName, req.DestKey)
+	if err != nil {
+		utils.Error("copy file failed", "error", err)
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		return
+	}
+
+	// 创建新对象元数据
+	newObj := &storage.Object{
+		Bucket:       bucketName,
+		Key:          req.DestKey,
+		Size:         srcObj.Size,
+		ETag:         newETag,
+		ContentType:  srcObj.ContentType,
+		StoragePath:  newStoragePath,
+		LastModified: time.Now(),
+	}
+	if err := h.metadata.PutObject(newObj); err != nil {
+		utils.Error("save copied object metadata failed", "error", err)
+		// 回滚：删除已复制的文件
+		h.filestore.DeleteObject(newStoragePath)
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		return
+	}
+
+	utils.WriteJSONResponse(w, map[string]interface{}{
+		"success":    true,
+		"source_key": req.SourceKey,
+		"dest_key":   req.DestKey,
+		"size":       srcObj.Size,
+		"etag":       newETag,
+	})
+}
+
+// adminSearchObjects 搜索对象
+// GET /api/admin/buckets/{bucket}/search?q=keyword
+func (h *Handler) adminSearchObjects(w http.ResponseWriter, r *http.Request, bucketName string) {
+	if r.Method != http.MethodGet {
+		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		return
+	}
+
+	keyword := r.URL.Query().Get("q")
+	if keyword == "" {
+		utils.WriteErrorResponse(w, "MissingParameter", "Missing 'q' parameter", http.StatusBadRequest)
+		return
+	}
+
+	results, err := h.metadata.SearchObjects(bucketName, keyword, 100)
+	if err != nil {
+		utils.Error("search objects failed", "error", err)
+		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		return
+	}
+
+	objects := make([]AdminObjectInfo, 0, len(results))
+	for _, obj := range results {
+		objects = append(objects, AdminObjectInfo{
+			Key:          obj.Key,
+			Size:         obj.Size,
+			LastModified: obj.LastModified.Format(time.RFC3339),
+			ETag:         obj.ETag,
+		})
+	}
+
+	utils.WriteJSONResponse(w, map[string]interface{}{
+		"objects": objects,
+		"count":   len(objects),
+	})
+}
+
 // adminDownloadObject 下载对象
 // GET /api/admin/buckets/{bucket}/download?key=xxx
 func (h *Handler) adminDownloadObject(w http.ResponseWriter, r *http.Request, bucketName string) {

@@ -225,16 +225,6 @@ func (m *MetadataStore) InitDefaultSettings(adminUsername, adminPassword string)
 		return err
 	}
 
-	// 生成默认 API Key
-	accessKeyID := generateRandomKey(20)
-	secretAccessKey := generateRandomKey(40)
-	if err := m.SetSetting(SettingAuthAccessKeyID, accessKeyID); err != nil {
-		return err
-	}
-	if err := m.SetSetting(SettingAuthSecretAccessKey, secretAccessKey); err != nil {
-		return err
-	}
-
 	return nil
 }
 

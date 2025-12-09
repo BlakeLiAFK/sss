@@ -46,7 +46,7 @@
           :accept="'*/*'"
           multiple
         >
-          <el-button type="primary">
+          <el-button type="primary" class="primary-btn">
             <el-icon><Upload /></el-icon>
             Upload
           </el-button>
@@ -96,24 +96,24 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="55" />
-        <el-table-column prop="Key" label="Name" min-width="300">
+        <el-table-column prop="key" label="Name" min-width="300">
           <template #default="{ row }">
             <div class="file-cell">
               <div class="file-icon">
                 <el-icon><Document /></el-icon>
               </div>
-              <span class="file-name">{{ row.Key }}</span>
+              <span class="file-name">{{ row.key }}</span>
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="Size" label="Size" width="120">
+        <el-table-column prop="size" label="Size" width="120">
           <template #default="{ row }">
-            <span class="size-text">{{ formatSize(row.Size) }}</span>
+            <span class="size-text">{{ formatSize(row.size) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="LastModified" label="Modified" width="180">
+        <el-table-column prop="last_modified" label="Modified" width="180">
           <template #default="{ row }">
-            <span class="date-text">{{ formatDate(row.LastModified) }}</span>
+            <span class="date-text">{{ formatDate(row.last_modified) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="Actions" width="320" align="center">
@@ -122,17 +122,17 @@
               <el-icon><View /></el-icon>
               Preview
             </el-button>
-            <el-button size="small" text @click="handleDownload(row.Key)">
+            <el-button size="small" text @click="handleDownload(row.key)">
               <el-icon><Download /></el-icon>
               Download
             </el-button>
-            <el-button size="small" text @click="handleCopyLink(row.Key)">
+            <el-button size="small" text @click="handleCopyLink(row.key)">
               <el-icon><Link /></el-icon>
             </el-button>
-            <el-button size="small" text @click="handleRename(row.Key)">
+            <el-button size="small" text @click="handleRename(row.key)">
               <el-icon><Edit /></el-icon>
             </el-button>
-            <el-button size="small" text type="danger" @click="handleDelete(row.Key)">
+            <el-button size="small" text type="danger" @click="handleDelete(row.key)">
               <el-icon><Delete /></el-icon>
             </el-button>
           </template>
@@ -146,7 +146,7 @@
           :accept="'*/*'"
           multiple
         >
-          <el-button type="primary">Upload your first file</el-button>
+          <el-button type="primary" class="primary-btn">Upload your first file</el-button>
         </el-upload>
       </el-empty>
 
@@ -190,7 +190,7 @@
       </div>
       <template #footer>
         <el-button @click="cancelUpload">Cancel</el-button>
-        <el-button type="primary" @click="startUpload" :disabled="pendingFilesWithPath.length === 0">
+        <el-button type="primary" class="primary-btn" @click="startUpload" :disabled="pendingFilesWithPath.length === 0">
           Upload {{ pendingFilesWithPath.length }} file(s)
         </el-button>
       </template>
@@ -229,7 +229,7 @@
       </el-form>
       <template #footer>
         <el-button @click="renameDialogVisible = false">Cancel</el-button>
-        <el-button type="primary" @click="confirmRename" :loading="renaming">Confirm</el-button>
+        <el-button type="primary" class="primary-btn" @click="confirmRename" :loading="renaming">Confirm</el-button>
       </template>
     </el-dialog>
 
@@ -285,7 +285,7 @@
             <strong>File:</strong> {{ previewKey }}<br />
             <strong>Size:</strong> {{ formatSize(previewSize) }}
           </p>
-          <el-button type="primary" @click="handleDownload(previewKey)">
+          <el-button type="primary" class="primary-btn" @click="handleDownload(previewKey)">
             <el-icon><Download /></el-icon>
             Download File
           </el-button>
@@ -299,7 +299,7 @@
               <el-icon><Link /></el-icon>
               Copy Link
             </el-button>
-            <el-button type="primary" @click="handleDownload(previewKey)">
+            <el-button type="primary" class="primary-btn" @click="handleDownload(previewKey)">
               <el-icon><Download /></el-icon>
               Download
             </el-button>
@@ -315,8 +315,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
 import { ArrowRight, Upload, Document, Delete, Search, Download, Link, Edit, Close, View } from '@element-plus/icons-vue'
-import { listObjects, deleteObject, getObjectUrl, uploadObject, generatePresignedUrl, getBucketPublic, copyObject, searchObjects, type S3Object } from '../api/s3'
-import { batchDeleteObjects, batchDownloadObjects } from '../api/admin'
+import { listObjects, deleteObject, getObjectUrl, uploadObject, generatePresignedUrl, getBucketPublic, copyObject, searchObjects, batchDeleteObjects, batchDownloadObjects, type S3Object } from '../api/admin'
 
 const route = useRoute()
 
@@ -437,8 +436,8 @@ async function loadObjects(append = false) {
     } else {
       objects.value = result.objects
     }
-    isTruncated.value = result.isTruncated
-    nextMarker.value = result.nextMarker
+    isTruncated.value = result.is_truncated
+    nextMarker.value = result.next_marker
   } catch (e: any) {
     ElMessage.error('Failed to load: ' + e.message)
   } finally {
@@ -451,7 +450,7 @@ function loadMore() {
 }
 
 function handleRowClick(row: S3Object) {
-  handleDownload(row.Key)
+  handleDownload(row.key)
 }
 
 async function handleDownload(key: string) {
@@ -488,7 +487,19 @@ async function handleCopyLink(key: string) {
       })
       url = result.url
     }
-    await navigator.clipboard.writeText(url)
+    // 兼容 HTTP 环境的剪贴板复制
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(url)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = url
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
     ElMessage.success(isPublic.value ? 'Link copied' : 'Presigned link copied (valid for 1 hour)')
   } catch (e: any) {
     ElMessage.error('Failed to copy link: ' + e.message)
@@ -533,7 +544,7 @@ async function confirmRename() {
     return
   }
 
-  const existingObject = objects.value.find(obj => obj.Key === newKey)
+  const existingObject = objects.value.find(obj => obj.key === newKey)
   if (existingObject) {
     try {
       await ElMessageBox.confirm(
@@ -548,7 +559,7 @@ async function confirmRename() {
 
   renaming.value = true
   try {
-    await copyObject(bucketName.value, oldKey, bucketName.value, newKey)
+    await copyObject(bucketName.value, oldKey, newKey)
     await deleteObject(bucketName.value, oldKey)
     ElMessage.success('Renamed successfully')
     renameDialogVisible.value = false
@@ -737,7 +748,7 @@ async function handleBatchDelete() {
       { type: 'warning', confirmButtonText: 'Delete All', confirmButtonClass: 'el-button--danger' }
     )
 
-    const keys = selectedRows.value.map(row => row.Key)
+    const keys = selectedRows.value.map(row => row.key)
     const result = await batchDeleteObjects(bucketName.value, keys)
 
     if (result.deleted_count > 0) {
@@ -761,7 +772,7 @@ async function handleBatchDownload() {
 
   batchDownloading.value = true
   try {
-    const keys = selectedRows.value.map(row => row.Key)
+    const keys = selectedRows.value.map(row => row.key)
     const blob = await batchDownloadObjects(bucketName.value, keys)
 
     // 创建下载链接
@@ -816,9 +827,9 @@ function getPreviewType(key: string): 'image' | 'video' | 'audio' | 'text' | 'pd
 }
 
 async function handlePreview(row: S3Object) {
-  previewKey.value = row.Key
-  previewSize.value = row.Size
-  previewType.value = getPreviewType(row.Key)
+  previewKey.value = row.key
+  previewSize.value = row.size
+  previewType.value = getPreviewType(row.key)
   previewContent.value = ''
   previewUrl.value = ''
   previewDialogVisible.value = true
@@ -828,11 +839,11 @@ async function handlePreview(row: S3Object) {
     // 获取文件 URL
     let url: string
     if (isPublic.value) {
-      url = getObjectUrl(bucketName.value, row.Key)
+      url = getObjectUrl(bucketName.value, row.key)
     } else {
       const result = await generatePresignedUrl({
         bucket: bucketName.value,
-        key: row.Key,
+        key: row.key,
         method: 'GET',
         expiresMinutes: 60
       })
@@ -843,8 +854,8 @@ async function handlePreview(row: S3Object) {
     // 对于文本类型，需要获取内容
     if (previewType.value === 'text') {
       // 文件太大则不加载
-      if (row.Size > MAX_TEXT_PREVIEW_SIZE) {
-        previewContent.value = `File is too large to preview (${formatSize(row.Size)}).\nMaximum preview size: ${formatSize(MAX_TEXT_PREVIEW_SIZE)}\n\nPlease download the file to view its contents.`
+      if (row.size > MAX_TEXT_PREVIEW_SIZE) {
+        previewContent.value = `File is too large to preview (${formatSize(row.size)}).\nMaximum preview size: ${formatSize(MAX_TEXT_PREVIEW_SIZE)}\n\nPlease download the file to view its contents.`
       } else {
         const response = await fetch(url)
         if (response.ok) {
@@ -907,14 +918,25 @@ function formatDate(dateStr: string): string {
 }
 
 .breadcrumb-link {
-  color: #3b82f6;
+  color: #e67e22;
   text-decoration: none;
   transition: color 0.2s;
 }
 
 .breadcrumb-link:hover {
-  color: #1d4ed8;
+  color: #d35400;
   text-decoration: underline;
+}
+
+/* 橙色主题按钮 */
+.primary-btn {
+  background: #e67e22;
+  border-color: #e67e22;
+}
+
+.primary-btn:hover {
+  background: #d35400;
+  border-color: #d35400;
 }
 
 .breadcrumb-separator {
@@ -1277,7 +1299,7 @@ function formatDate(dateStr: string): string {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(59, 130, 246, 0.15);
+  background: rgba(230, 126, 34, 0.15);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
@@ -1295,12 +1317,12 @@ function formatDate(dateStr: string): string {
   background: white;
   border-radius: 20px;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-  border: 3px dashed #3b82f6;
+  border: 3px dashed #e67e22;
   text-align: center;
 }
 
 .drop-content .el-icon {
-  color: #3b82f6;
+  color: #e67e22;
   margin-bottom: 16px;
   animation: bounce 1s infinite;
 }

@@ -16,6 +16,7 @@
             <div class="header-actions">
               <el-button
                 type="primary"
+                class="primary-btn"
                 @click="handleScanGC"
                 :loading="gcScanning"
                 :icon="Search"
@@ -126,6 +127,7 @@
             <div class="header-actions">
               <el-button
                 type="primary"
+                class="primary-btn"
                 @click="handleCheckIntegrity"
                 :loading="integrityChecking"
                 :icon="Search"
@@ -242,6 +244,7 @@
             <div class="header-actions">
               <el-button
                 type="primary"
+                class="primary-btn"
                 @click="openMigrateDialog"
                 :icon="Link"
               >
@@ -401,7 +404,7 @@
             <el-col :span="12">
               <el-form-item label="Target Bucket" required>
                 <el-select v-model="migrateForm.targetBucket" placeholder="Select local bucket" style="width: 100%">
-                  <el-option v-for="b in buckets" :key="b.Name" :label="b.Name" :value="b.Name" />
+                  <el-option v-for="b in buckets" :key="b.name" :label="b.name" :value="b.name" />
                 </el-select>
               </el-form-item>
             </el-col>
@@ -421,7 +424,7 @@
 
         <template #footer>
           <el-button @click="showMigrateDialog = false">Cancel</el-button>
-          <el-button type="primary" @click="handleCreateMigration" :loading="migrateCreating">
+          <el-button type="primary" class="primary-btn" @click="handleCreateMigration" :loading="migrateCreating">
             Start Migration
           </el-button>
         </template>
@@ -442,7 +445,7 @@
                   @change="loadBucketObjects"
                   style="width: 100%"
                 >
-                  <el-option v-for="b in buckets" :key="b.Name" :label="b.Name" :value="b.Name" />
+                  <el-option v-for="b in buckets" :key="b.name" :label="b.name" :value="b.name" />
                 </el-select>
               </el-form-item>
 
@@ -455,7 +458,7 @@
                       style="width: 160px"
                       :disabled="!presignForm.bucket"
                     >
-                      <el-option v-for="o in bucketObjects" :key="o.Key" :label="o.Key" :value="o.Key" />
+                      <el-option v-for="o in bucketObjects" :key="o.key" :label="o.key" :value="o.key" />
                     </el-select>
                   </template>
                 </el-input>
@@ -506,7 +509,7 @@
               </el-row>
 
               <el-form-item>
-                <el-button type="primary" @click="handleGeneratePresignedUrl" :loading="generating">
+                <el-button type="primary" class="primary-btn" @click="handleGeneratePresignedUrl" :loading="generating">
                   Generate URL
                 </el-button>
                 <el-button @click="clearForm">Clear</el-button>
@@ -516,7 +519,7 @@
             <div v-if="presignedUrl" class="result-box">
               <label>Generated URL</label>
               <el-input v-model="presignedUrl" type="textarea" :rows="3" readonly />
-              <el-button type="primary" size="small" @click="copyUrl" style="margin-top: 12px">
+              <el-button type="primary" class="primary-btn" size="small" @click="copyUrl" style="margin-top: 12px">
                 <el-icon><CopyDocument /></el-icon>
                 Copy URL
               </el-button>
@@ -556,7 +559,7 @@
             <div class="code-block">
               <pre>{{ awsCliConfig }}</pre>
             </div>
-            <el-button type="primary" size="small" @click="copyAwsConfig" style="margin-top: 12px">
+            <el-button type="primary" class="primary-btn" size="small" @click="copyAwsConfig" style="margin-top: 12px">
               <el-icon><CopyDocument /></el-icon>
               Copy Configuration
             </el-button>
@@ -572,7 +575,7 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CopyDocument, Search, Delete, CircleCheck, Refresh, Link, Close, Timer, Check, Warning } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
-import { listBuckets, listObjects, generatePresignedUrl, type Bucket, type S3Object } from '../api/s3'
+import { listBuckets, listObjects, generatePresignedUrl, type Bucket, type S3Object } from '../api/admin'
 import {
   scanGC, executeGC, type GCResult,
   checkIntegrity, repairIntegrity, type IntegrityResult,
@@ -842,14 +845,33 @@ async function handleGeneratePresignedUrl() {
   }
 }
 
+// 兼容 HTTP 环境的剪贴板复制
+function copyToClipboard(text: string) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    ElMessage.success('Copied to clipboard')
+  } catch {
+    ElMessage.error('Failed to copy')
+  }
+}
+
 function copyUrl() {
-  navigator.clipboard.writeText(presignedUrl.value)
-  ElMessage.success('Copied to clipboard')
+  copyToClipboard(presignedUrl.value)
 }
 
 function copyAwsConfig() {
-  navigator.clipboard.writeText(awsCliConfig.value)
-  ElMessage.success('Copied to clipboard')
+  copyToClipboard(awsCliConfig.value)
 }
 
 function clearForm() {
@@ -1294,5 +1316,16 @@ function getMigrateDuration(job: MigrateProgress): string {
   font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
   font-size: 12px;
   color: #64748b;
+}
+
+/* 橙色主题按钮 */
+.primary-btn {
+  background: #e67e22;
+  border-color: #e67e22;
+}
+
+.primary-btn:hover {
+  background: #d35400;
+  border-color: #d35400;
 }
 </style>

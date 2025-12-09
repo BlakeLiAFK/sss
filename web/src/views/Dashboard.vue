@@ -2,13 +2,13 @@
   <div class="page-container">
     <div class="page-header">
       <div class="page-title">
-        <h1>仪表盘</h1>
-        <p class="page-subtitle">存储概览与统计</p>
+        <h1>{{ t('dashboard.title') }}</h1>
+        <p class="page-subtitle">{{ t('dashboard.subtitle') }}</p>
       </div>
       <div class="page-actions">
         <el-button @click="loadStats" :loading="loading" class="refresh-btn">
           <el-icon><Refresh /></el-icon>
-          <span class="btn-text">刷新</span>
+          <span class="btn-text">{{ t('common.refresh') }}</span>
         </el-button>
       </div>
     </div>
@@ -21,7 +21,7 @@
         </div>
         <div class="stat-content">
           <div class="stat-value">{{ stats?.stats.total_buckets || 0 }}</div>
-          <div class="stat-label">存储桶</div>
+          <div class="stat-label">{{ t('dashboard.buckets') }}</div>
         </div>
       </div>
 
@@ -31,7 +31,7 @@
         </div>
         <div class="stat-content">
           <div class="stat-value">{{ stats?.stats.total_objects || 0 }}</div>
-          <div class="stat-label">对象数</div>
+          <div class="stat-label">{{ t('dashboard.objects') }}</div>
         </div>
       </div>
 
@@ -41,7 +41,7 @@
         </div>
         <div class="stat-content">
           <div class="stat-value">{{ formatSize(stats?.stats.total_size || 0) }}</div>
-          <div class="stat-label">总容量</div>
+          <div class="stat-label">{{ t('dashboard.totalSize') }}</div>
         </div>
       </div>
 
@@ -51,7 +51,7 @@
         </div>
         <div class="stat-content">
           <div class="stat-value">{{ stats?.disk_file_count || 0 }}</div>
-          <div class="stat-label">文件数</div>
+          <div class="stat-label">{{ t('dashboard.files') }}</div>
         </div>
       </div>
     </div>
@@ -61,32 +61,32 @@
       <!-- 各桶存储占比 -->
       <div class="content-card chart-card">
         <div class="card-header">
-          <h3>存储桶分布</h3>
+          <h3>{{ t('dashboard.bucketDistribution') }}</h3>
         </div>
         <div class="chart-container" ref="bucketChartRef"></div>
         <el-empty v-if="!loading && (!stats?.stats.bucket_stats || stats.stats.bucket_stats.length === 0)"
-                  description="暂无数据" :image-size="80" />
+                  :description="t('common.noData')" :image-size="80" />
       </div>
 
       <!-- 文件类型分布 -->
       <div class="content-card chart-card">
         <div class="card-header">
-          <h3>文件类型分布</h3>
+          <h3>{{ t('dashboard.fileTypeDistribution') }}</h3>
         </div>
         <div class="chart-container" ref="typeChartRef"></div>
         <el-empty v-if="!loading && (!stats?.stats.type_stats || stats.stats.type_stats.length === 0)"
-                  description="暂无数据" :image-size="80" />
+                  :description="t('common.noData')" :image-size="80" />
       </div>
     </div>
 
     <!-- 桶详情表格 -->
     <div class="content-card table-card">
       <div class="card-header">
-        <h3>存储桶详情</h3>
+        <h3>{{ t('dashboard.bucketDetails') }}</h3>
       </div>
       <div class="table-wrapper">
         <el-table :data="stats?.stats.bucket_stats || []" class="data-table">
-          <el-table-column prop="name" label="存储桶" min-width="150">
+          <el-table-column prop="name" :label="t('dashboard.bucket')" min-width="150">
             <template #default="{ row }">
               <router-link :to="{ name: 'Objects', params: { name: row.name } }" class="bucket-link">
                 <el-icon><Folder /></el-icon>
@@ -94,24 +94,24 @@
               </router-link>
             </template>
           </el-table-column>
-          <el-table-column prop="object_count" label="对象数" width="100" align="right">
+          <el-table-column prop="object_count" :label="t('dashboard.objectCount')" width="100" align="right">
             <template #default="{ row }">
               {{ row.object_count.toLocaleString() }}
             </template>
           </el-table-column>
-          <el-table-column prop="total_size" label="容量" width="100" align="right">
+          <el-table-column prop="total_size" :label="t('dashboard.capacity')" width="100" align="right">
             <template #default="{ row }">
               {{ formatSize(row.total_size) }}
             </template>
           </el-table-column>
-          <el-table-column label="访问" width="80" align="center">
+          <el-table-column :label="t('dashboard.access')" width="80" align="center">
             <template #default="{ row }">
               <el-tag :type="row.is_public ? 'warning' : 'info'" size="small">
-                {{ row.is_public ? '公开' : '私有' }}
+                {{ row.is_public ? t('dashboard.public') : t('dashboard.private') }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="占比" min-width="120" class-name="hide-on-mobile">
+          <el-table-column :label="t('dashboard.percentage')" min-width="120" class-name="hide-on-mobile">
             <template #default="{ row }">
               <el-progress
                 :percentage="getPercentage(row.total_size)"
@@ -128,21 +128,21 @@
     <!-- 最近上传 -->
     <div class="content-card table-card">
       <div class="card-header">
-        <h3>最近上传</h3>
+        <h3>{{ t('dashboard.recentUploads') }}</h3>
       </div>
       <div class="table-wrapper">
         <el-table :data="recentObjects" class="data-table">
-          <el-table-column prop="key" label="文件" min-width="200">
+          <el-table-column prop="key" :label="t('dashboard.file')" min-width="200">
             <template #default="{ row }">
               <span class="object-path">{{ row.key }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="size" label="大小" width="100" align="right">
+          <el-table-column prop="size" :label="t('dashboard.size')" width="100" align="right">
             <template #default="{ row }">
               {{ formatSize(row.size) }}
             </template>
           </el-table-column>
-          <el-table-column prop="last_modified" label="时间" width="160" class-name="hide-on-mobile">
+          <el-table-column prop="last_modified" :label="t('dashboard.time')" width="160" class-name="hide-on-mobile">
             <template #default="{ row }">
               {{ formatDate(row.last_modified) }}
             </template>
@@ -150,17 +150,20 @@
         </el-table>
       </div>
       <el-empty v-if="!loading && recentObjects.length === 0"
-                description="暂无上传记录" :image-size="80" />
+                :description="t('dashboard.noUploadRecords')" :image-size="80" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Refresh, Folder, Document, Coin, Box } from '@element-plus/icons-vue'
 import { getStorageStats, getRecentObjects, type StatsResponse, type RecentObject } from '../api/admin'
 import * as echarts from 'echarts'
+
+const { t } = useI18n()
 
 const loading = ref(false)
 const stats = ref<StatsResponse | null>(null)
@@ -295,7 +298,7 @@ function renderCharts() {
 // 图表颜色
 function getChartColor(index: number): string {
   const colors = [
-    '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
+    '#e67e22', '#10b981', '#3b82f6', '#ef4444',
     '#8b5cf6', '#06b6d4', '#ec4899', '#f97316',
     '#14b8a6', '#6366f1', '#84cc16', '#a855f7'
   ]

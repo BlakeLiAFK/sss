@@ -91,7 +91,6 @@ func (h *Handler) getSettings(w http.ResponseWriter, r *http.Request) {
 
 	// 系统信息
 	installedAt, _ := h.metadata.GetSetting(storage.SettingSystemInstalledAt)
-	version, _ := h.metadata.GetSetting(storage.SettingSystemVersion)
 
 	resp := SettingsResponse{
 		Runtime:  runtime,
@@ -100,7 +99,7 @@ func (h *Handler) getSettings(w http.ResponseWriter, r *http.Request) {
 		System: SystemInfo{
 			Installed:   h.metadata.IsInstalled(),
 			InstalledAt: installedAt,
-			Version:     version,
+			Version:     config.Version, // 直接使用编译时常量，而非数据库存储
 		},
 	}
 
