@@ -11,82 +11,82 @@
 
       <!-- 步骤指示器 -->
       <el-steps :active="currentStep" finish-status="success" simple class="setup-steps">
-        <el-step title="欢迎" />
-        <el-step title="配置" />
-        <el-step title="完成" />
+        <el-step :title="t('setup.stepWelcome')" />
+        <el-step :title="t('setup.stepConfig')" />
+        <el-step :title="t('setup.stepComplete')" />
       </el-steps>
 
       <!-- 步骤 1: 欢迎 -->
       <div v-if="currentStep === 0" class="step-content">
         <div class="welcome-content">
-          <el-icon :size="64" color="#3b82f6"><Setting /></el-icon>
-          <h2>欢迎使用 SSS</h2>
-          <p>Simple S3 Server 是一个轻量级、自托管的 S3 兼容对象存储服务器。</p>
-          <p>首次使用需要完成以下初始化配置：</p>
+          <el-icon :size="64" color="#e67e22"><Setting /></el-icon>
+          <h2>{{ t('setup.welcomeTitle') }}</h2>
+          <p>{{ t('setup.welcomeDesc') }}</p>
+          <p>{{ t('setup.welcomeHint') }}</p>
           <ul>
-            <li>设置管理员账号和密码</li>
-            <li>配置服务器参数</li>
-            <li>生成 API 访问密钥</li>
+            <li>{{ t('setup.setupAdminAccount') }}</li>
+            <li>{{ t('setup.configServer') }}</li>
           </ul>
         </div>
         <el-button type="primary" size="large" @click="currentStep = 1" class="next-button">
-          开始配置
+          {{ t('setup.startConfig') }}
         </el-button>
+        <LanguageSwitcher size="small" :show-label="false" class="lang-switcher" />
       </div>
 
       <!-- 步骤 2: 配置 -->
       <div v-if="currentStep === 1" class="step-content">
         <el-form :model="form" :rules="rules" ref="formRef" label-position="top">
-          <el-divider content-position="left">管理员账号</el-divider>
-          
-          <el-form-item label="用户名" prop="adminUsername">
+          <el-divider :content-position="'left'">{{ t('setup.adminAccount') }}</el-divider>
+
+          <el-form-item :label="t('setup.adminUsername')" prop="adminUsername">
             <el-input v-model="form.adminUsername" placeholder="admin" :prefix-icon="User" />
           </el-form-item>
-          
-          <el-form-item label="密码" prop="adminPassword">
-            <el-input 
-              v-model="form.adminPassword" 
-              type="password" 
-              placeholder="至少6位字符" 
+
+          <el-form-item :label="t('setup.adminPassword')" prop="adminPassword">
+            <el-input
+              v-model="form.adminPassword"
+              type="password"
+              :placeholder="t('setup.atLeast6Chars')"
               :prefix-icon="Lock"
-              show-password 
-            />
-          </el-form-item>
-          
-          <el-form-item label="确认密码" prop="confirmPassword">
-            <el-input 
-              v-model="form.confirmPassword" 
-              type="password" 
-              placeholder="再次输入密码" 
-              :prefix-icon="Lock"
-              show-password 
+              show-password
             />
           </el-form-item>
 
-          <el-divider content-position="left">服务器配置（可选）</el-divider>
-          
+          <el-form-item :label="t('setup.confirmPassword')" prop="confirmPassword">
+            <el-input
+              v-model="form.confirmPassword"
+              type="password"
+              :placeholder="t('setup.enterAgain')"
+              :prefix-icon="Lock"
+              show-password
+            />
+          </el-form-item>
+
+          <el-divider :content-position="'left'">{{ t('setup.serverConfig') }}</el-divider>
+
           <el-row :gutter="16">
             <el-col :span="16">
-              <el-form-item label="监听地址">
+              <el-form-item :label="t('setup.listenAddress')">
                 <el-input v-model="form.serverHost" placeholder="0.0.0.0" />
               </el-form-item>
             </el-col>
             <el-col :span="8">
-              <el-form-item label="端口">
+              <el-form-item :label="t('setup.port')">
                 <el-input v-model="form.serverPort" placeholder="8080" />
               </el-form-item>
             </el-col>
           </el-row>
-          
-          <el-form-item label="区域">
+
+          <el-form-item :label="t('setup.region')">
             <el-input v-model="form.serverRegion" placeholder="us-east-1" />
           </el-form-item>
         </el-form>
 
         <div class="button-group">
-          <el-button size="large" @click="currentStep = 0">上一步</el-button>
+          <el-button size="large" @click="currentStep = 0">{{ t('common.previous') }}</el-button>
           <el-button type="primary" size="large" @click="handleInstall" :loading="loading">
-            完成安装
+            {{ t('setup.install') }}
           </el-button>
         </div>
       </div>
@@ -95,38 +95,13 @@
       <div v-if="currentStep === 2" class="step-content">
         <div class="success-content">
           <el-icon :size="64" color="#10b981"><CircleCheck /></el-icon>
-          <h2>安装成功！</h2>
-          <p>请保存以下 API 访问密钥，它只会显示一次：</p>
-          
-          <div class="key-display">
-            <div class="key-item">
-              <span class="key-label">Access Key ID:</span>
-              <code class="key-value">{{ result.accessKeyId }}</code>
-              <el-button text @click="copyToClipboard(result.accessKeyId)">
-                <el-icon><DocumentCopy /></el-icon>
-              </el-button>
-            </div>
-            <div class="key-item">
-              <span class="key-label">Secret Access Key:</span>
-              <code class="key-value">{{ result.secretAccessKey }}</code>
-              <el-button text @click="copyToClipboard(result.secretAccessKey)">
-                <el-icon><DocumentCopy /></el-icon>
-              </el-button>
-            </div>
-          </div>
-
-          <el-alert 
-            title="重要提示" 
-            type="warning" 
-            description="Secret Access Key 只会显示一次，请妥善保存。如果丢失，需要在管理后台重新生成。"
-            show-icon
-            :closable="false"
-            class="warning-alert"
-          />
+          <h2>{{ t('setup.completeTitle') }}</h2>
+          <p>{{ t('setup.completeDesc') }}</p>
+          <p class="hint-text">{{ t('setup.completeHint') }}</p>
         </div>
-        
+
         <el-button type="primary" size="large" @click="goToLogin" class="next-button">
-          前往登录
+          {{ t('setup.goToLogin') }}
         </el-button>
       </div>
     </div>
@@ -136,10 +111,14 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, type FormInstance } from 'element-plus'
-import { User, Lock, Setting, CircleCheck, DocumentCopy } from '@element-plus/icons-vue'
+import { User, Lock, Setting, CircleCheck } from '@element-plus/icons-vue'
+import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import { resetInstallStatus } from '../router'
 import apiClient from '../api/client'
+
+const { t } = useI18n()
 
 const router = useRouter()
 const formRef = ref<FormInstance>()
@@ -155,15 +134,11 @@ const form = reactive({
   serverRegion: 'us-east-1'
 })
 
-const result = reactive({
-  accessKeyId: '',
-  secretAccessKey: ''
-})
 
 // 密码确认验证
 const validateConfirmPassword = (_rule: any, value: string, callback: Function) => {
   if (value !== form.adminPassword) {
-    callback(new Error('两次输入的密码不一致'))
+    callback(new Error(t('setup.passwordMismatch')))
   } else {
     callback()
   }
@@ -171,15 +146,15 @@ const validateConfirmPassword = (_rule: any, value: string, callback: Function) 
 
 const rules = {
   adminUsername: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, message: '用户名至少3个字符', trigger: 'blur' }
+    { required: true, message: t('setup.pleaseEnterUsername'), trigger: 'blur' },
+    { min: 3, message: t('setup.atLeast3Chars'), trigger: 'blur' }
   ],
   adminPassword: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码至少6位字符', trigger: 'blur' }
+    { required: true, message: t('setup.pleaseEnterPassword'), trigger: 'blur' },
+    { min: 6, message: t('setup.atLeast6Chars'), trigger: 'blur' }
   ],
   confirmPassword: [
-    { required: true, message: '请确认密码', trigger: 'blur' },
+    { required: true, message: t('setup.pleaseConfirmPassword'), trigger: 'blur' },
     { validator: validateConfirmPassword, trigger: 'blur' }
   ]
 }
@@ -201,24 +176,17 @@ async function handleInstall() {
       })
 
       if (response.data.success) {
-        result.accessKeyId = response.data.access_key_id
-        result.secretAccessKey = response.data.secret_access_key
         currentStep.value = 2
-        ElMessage.success('安装成功')
+        ElMessage.success(t('setup.installSuccess'))
       } else {
-        ElMessage.error(response.data.message || '安装失败')
+        ElMessage.error(response.data.message || t('setup.installFailed'))
       }
     } catch (e: any) {
-      ElMessage.error('安装失败: ' + (e.response?.data?.Message || e.message))
+      ElMessage.error(t('setup.installFailed') + ': ' + (e.response?.data?.Message || e.message))
     } finally {
       loading.value = false
     }
   })
-}
-
-function copyToClipboard(text: string) {
-  navigator.clipboard.writeText(text)
-  ElMessage.success('已复制到剪贴板')
 }
 
 async function goToLogin() {
@@ -263,7 +231,7 @@ async function goToLogin() {
   justify-content: center;
   width: 72px;
   height: 72px;
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
   border-radius: 16px;
   color: #ffffff;
   margin-bottom: 16px;
@@ -333,40 +301,10 @@ async function goToLogin() {
   margin: 8px 0;
 }
 
-.key-display {
-  background: #f8fafc;
-  border-radius: 8px;
-  padding: 16px;
-  margin: 20px 0;
-  text-align: left;
-}
-
-.key-item {
-  display: flex;
-  align-items: center;
-  margin: 8px 0;
-  flex-wrap: wrap;
-}
-
-.key-label {
-  font-weight: 600;
-  color: #475569;
-  min-width: 140px;
-}
-
-.key-value {
-  font-family: monospace;
-  background: #e2e8f0;
-  padding: 4px 8px;
-  border-radius: 4px;
+.hint-text {
   font-size: 13px;
-  word-break: break-all;
-  flex: 1;
-}
-
-.warning-alert {
-  margin-top: 16px;
-  text-align: left;
+  color: #94a3b8;
+  margin-top: 16px !important;
 }
 
 .next-button {

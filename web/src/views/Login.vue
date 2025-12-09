@@ -5,15 +5,16 @@
         <div class="logo-wrapper">
           <el-icon :size="40"><Box /></el-icon>
         </div>
-        <h1 class="title">SSS</h1>
-        <p class="subtitle">Simple S3 Server</p>
+        <h1 class="title">{{ t('login.title') }}</h1>
+        <p class="subtitle">{{ t('login.subtitle') }}</p>
+        <LanguageSwitcher size="small" :show-label="false" class="lang-switcher" />
       </div>
 
       <el-form :model="form" :rules="rules" ref="formRef" class="login-form">
         <el-form-item prop="endpoint">
           <el-input
             v-model="form.endpoint"
-            placeholder="Server Endpoint"
+            :placeholder="t('login.serverEndpoint')"
             :prefix-icon="Link"
             size="large"
           />
@@ -21,7 +22,7 @@
         <el-form-item prop="region">
           <el-input
             v-model="form.region"
-            placeholder="Region"
+            :placeholder="t('login.region')"
             :prefix-icon="Location"
             size="large"
           />
@@ -29,7 +30,7 @@
         <el-form-item prop="username">
           <el-input
             v-model="form.username"
-            placeholder="Username"
+            :placeholder="t('login.username')"
             :prefix-icon="User"
             size="large"
           />
@@ -38,7 +39,7 @@
           <el-input
             v-model="form.password"
             type="password"
-            placeholder="Password"
+            :placeholder="t('login.password')"
             :prefix-icon="Lock"
             size="large"
             show-password
@@ -53,59 +54,59 @@
             size="large"
             class="login-button"
           >
-            登录
+            {{ t('login.login') }}
           </el-button>
         </el-form-item>
       </el-form>
 
       <div class="login-footer">
         <el-button link type="primary" @click="showResetDialog = true">
-          忘记密码？
+          {{ t('login.forgotPassword') }}
         </el-button>
       </div>
     </div>
 
     <!-- 密码重置对话框 -->
-    <el-dialog v-model="showResetDialog" title="重置管理员密码" width="450px">
+    <el-dialog v-model="showResetDialog" :title="t('login.resetPasswordTitle')" width="450px">
       <div v-if="!resetFileExists">
         <el-alert type="info" :closable="false" show-icon>
           <template #title>
-            <span>请在服务器上执行以下命令：</span>
+            <span>{{ t('login.resetCommand') }}</span>
           </template>
           <template #default>
             <code class="reset-command">{{ resetCommand }}</code>
             <el-button size="small" @click="copyResetCommand" style="margin-left: 8px;">
-              复制
+              {{ t('common.copy') }}
             </el-button>
           </template>
         </el-alert>
-        <p class="reset-tip">执行完成后，点击下方按钮检测文件。</p>
+        <p class="reset-tip">{{ t('login.resetCommandHint') }}</p>
         <el-button type="primary" @click="checkResetFile" :loading="checkingFile">
-          检测文件
+          {{ t('login.checkFile') }}
         </el-button>
       </div>
 
       <div v-else>
         <el-form :model="resetForm" :rules="resetRules" ref="resetFormRef">
-          <el-form-item label="新密码" prop="newPassword">
-            <el-input 
-              v-model="resetForm.newPassword" 
-              type="password" 
-              placeholder="至少6位字符"
+          <el-form-item :label="t('login.newPassword')" prop="newPassword">
+            <el-input
+              v-model="resetForm.newPassword"
+              type="password"
+              :placeholder="t('login.atLeast6Chars')"
               show-password
             />
           </el-form-item>
-          <el-form-item label="确认密码" prop="confirmPassword">
-            <el-input 
-              v-model="resetForm.confirmPassword" 
-              type="password" 
-              placeholder="再次输入密码"
+          <el-form-item :label="t('login.confirmPassword')" prop="confirmPassword">
+            <el-input
+              v-model="resetForm.confirmPassword"
+              type="password"
+              :placeholder="t('login.enterAgain')"
               show-password
             />
           </el-form-item>
         </el-form>
         <el-button type="primary" @click="handleResetPassword" :loading="resetting">
-          重置密码
+          {{ t('login.resetPassword') }}
         </el-button>
       </div>
     </el-dialog>
@@ -115,11 +116,15 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, type FormInstance } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 import { User, Lock, Link, Location } from '@element-plus/icons-vue'
+import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import axios from 'axios'
 import { getBaseUrl } from '../api/client'
+
+const { t } = useI18n()
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -135,9 +140,9 @@ const form = reactive({
 })
 
 const rules = {
-  endpoint: [{ required: true, message: '请输入服务器地址', trigger: 'blur' }],
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+  endpoint: [{ required: true, message: t('login.pleaseEnterEndpoint'), trigger: 'blur' }],
+  username: [{ required: true, message: t('login.pleaseEnterUsername'), trigger: 'blur' }],
+  password: [{ required: true, message: t('login.pleaseEnterPassword'), trigger: 'blur' }]
 }
 
 // 密码重置相关
@@ -154,7 +159,7 @@ const resetForm = reactive({
 
 const validateConfirmPassword = (_rule: any, value: string, callback: Function) => {
   if (value !== resetForm.newPassword) {
-    callback(new Error('两次输入的密码不一致'))
+    callback(new Error(t('login.passwordMismatch')))
   } else {
     callback()
   }
@@ -162,11 +167,11 @@ const validateConfirmPassword = (_rule: any, value: string, callback: Function) 
 
 const resetRules = {
   newPassword: [
-    { required: true, message: '请输入新密码', trigger: 'blur' },
-    { min: 6, message: '密码至少6位字符', trigger: 'blur' }
+    { required: true, message: t('login.pleaseEnterPassword'), trigger: 'blur' },
+    { min: 6, message: t('login.atLeast6Chars'), trigger: 'blur' }
   ],
   confirmPassword: [
-    { required: true, message: '请确认密码', trigger: 'blur' },
+    { required: true, message: t('login.pleaseConfirmPassword'), trigger: 'blur' },
     { validator: validateConfirmPassword, trigger: 'blur' }
   ]
 }
@@ -191,14 +196,14 @@ async function handleLogin() {
           response.data.accessKeyId || '',
           response.data.secretAccessKey || ''
         )
-        ElMessage.success('登录成功')
+        ElMessage.success(t('login.loginSuccess'))
         router.push('/')
       } else {
-        ElMessage.error(response.data.message || response.data.Message || '登录失败')
+        ElMessage.error(response.data.message || response.data.Message || t('login.loginFailed'))
       }
     } catch (e: any) {
       const msg = e.response?.data?.Message || e.response?.data?.message || e.message
-      ElMessage.error('登录失败: ' + msg)
+      ElMessage.error(t('login.loginFailed') + ': ' + msg)
     } finally {
       loading.value = false
     }
@@ -212,28 +217,43 @@ async function checkResetFile() {
     const response = await axios.get(`${form.endpoint}/api/setup/reset-password/check`)
     if (response.data.file_exists) {
       resetFileExists.value = true
-      ElMessage.success('检测到重置文件，请设置新密码')
+      ElMessage.success(t('login.fileDetected'))
     } else {
       resetCommand.value = response.data.command
-      ElMessage.warning('未检测到重置文件，请先在服务器执行命令')
+      ElMessage.warning(t('login.fileNotDetected'))
     }
   } catch (e: any) {
-    ElMessage.error('检测失败: ' + (e.response?.data?.Message || e.message))
+    ElMessage.error(t('login.checkFailed') + ': ' + (e.response?.data?.Message || e.message))
   } finally {
     checkingFile.value = false
   }
 }
 
-// 复制重置命令
+// 复制重置命令（兼容 HTTP 环境）
 function copyResetCommand() {
-  navigator.clipboard.writeText(resetCommand.value)
-  ElMessage.success('已复制到剪贴板')
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(resetCommand.value)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = resetCommand.value
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    ElMessage.success(t('common.copied'))
+  } catch {
+    ElMessage.error(t('common.copyFailed'))
+  }
 }
 
 // 重置密码
 async function handleResetPassword() {
   if (!resetFormRef.value) return
-  
+
   await resetFormRef.value.validate(async (valid) => {
     if (!valid) return
 
@@ -242,18 +262,18 @@ async function handleResetPassword() {
       const response = await axios.post(`${form.endpoint}/api/setup/reset-password`, {
         new_password: resetForm.newPassword
       })
-      
+
       if (response.data.success) {
-        ElMessage.success('密码重置成功，请使用新密码登录')
+        ElMessage.success(t('login.resetSuccess'))
         showResetDialog.value = false
         resetFileExists.value = false
         resetForm.newPassword = ''
         resetForm.confirmPassword = ''
       } else {
-        ElMessage.error(response.data.message || '重置失败')
+        ElMessage.error(response.data.message || t('login.resetFailed'))
       }
     } catch (e: any) {
-      ElMessage.error('重置失败: ' + (e.response?.data?.Message || e.message))
+      ElMessage.error(t('login.resetFailed') + ': ' + (e.response?.data?.Message || e.message))
     } finally {
       resetting.value = false
     }
@@ -289,7 +309,7 @@ async function handleResetPassword() {
   justify-content: center;
   width: 72px;
   height: 72px;
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
   border-radius: 16px;
   color: #ffffff;
   margin-bottom: 16px;
@@ -323,7 +343,7 @@ async function handleResetPassword() {
 }
 
 .login-form :deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 2px #3b82f6;
+  box-shadow: 0 0 0 2px #e67e22;
 }
 
 .login-button {
@@ -332,12 +352,12 @@ async function handleResetPassword() {
   font-size: 16px;
   font-weight: 600;
   border-radius: 8px;
-  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
   border: none;
 }
 
 .login-button:hover {
-  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  background: linear-gradient(135deg, #d35400 0%, #c0392b 100%);
 }
 
 .login-footer {
@@ -359,5 +379,22 @@ async function handleResetPassword() {
   color: #64748b;
   font-size: 14px;
   margin: 16px 0;
+}
+
+.lang-switcher {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+}
+
+:deep(.lang-switcher .el-button) {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+}
+
+:deep(.lang-switcher .el-button:hover) {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.5);
 }
 </style>
