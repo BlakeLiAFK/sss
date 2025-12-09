@@ -208,7 +208,7 @@ async function loadStats() {
     recentObjects.value = recent
     renderCharts()
   } catch (e: any) {
-    ElMessage.error('Failed to load stats: ' + (e.response?.data?.message || e.message))
+    ElMessage.error(t('dashboard.loadStatsFailed') + ': ' + (e.response?.data?.message || e.message))
   } finally {
     loading.value = false
   }

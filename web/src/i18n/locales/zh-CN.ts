@@ -78,7 +78,8 @@ export default {
     enterAgain: '再次输入密码',
     passwordMismatch: '两次输入的密码不一致',
     resetSuccess: '密码重置成功，请使用新密码登录',
-    resetFailed: '重置失败'
+    resetFailed: '重置失败',
+pleaseConfirmPassword: '请确认您的密码'
   },
 
   // 安装页面
@@ -103,8 +104,12 @@ export default {
     enterAgain: '再次输入密码',
     serverConfig: '服务器配置（可选）',
     listenAddress: '监听地址',
+    listenAddressPlaceholder: '0.0.0.0',
     port: '端口',
+    portPlaceholder: '8080',
     region: '区域',
+    regionPlaceholder: 'us-east-1',
+    adminUsernamePlaceholder: 'admin',
     install: '完成安装',
     installing: '正在安装...',
     installSuccess: '安装成功',
@@ -127,7 +132,7 @@ export default {
     tools: '工具箱',
     auditLogs: '审计日志',
     settings: '系统设置',
-    admin: 'Admin',
+    admin: '管理员',
     logout: '退出'
   },
 
@@ -184,7 +189,10 @@ export default {
     deleteFailed: '删除失败',
     loadFailed: '加载存储桶失败',
     accessUpdated: '存储桶已设为{access}',
-    updateAccessFailed: '更新访问权限失败'
+    updateAccessFailed: '更新访问权限失败',
+deleteBucket: '删除存储桶',
+    nowPrivate: '存储桶已设为私有',
+    nowPublic: '存储桶已设为公有'
   },
 
   // 对象管理
@@ -262,7 +270,26 @@ export default {
     batchDeleteFailed: '批量删除失败',
     batchDownloadSuccess: '已下载 {count} 个文件为 ZIP',
     batchDownloadFailed: '批量下载失败',
-    loadPreviewFailed: '加载预览失败'
+    loadPreviewFailed: '加载预览失败',
+batchDelete: '批量删除',
+    browserNoAudioSupport: '您的浏览器不支持音频播放',
+    browserNoVideoSupport: '您的浏览器不支持视频播放',
+    buckets: '存储桶',
+    changePathHint: '点击更改路径',
+    clear: '清空',
+    deleteAll: '删除全部',
+    deleteFile: '删除文件',
+    dropFilesHere: '将文件拖放到此处上传',
+    enterNewPath: '输入新路径',
+    file: '文件',
+    fileTypeCannotPreview: '该文件类型不支持预览',
+    noFilesFound: '未找到文件',
+    pleaseEnterNewPath: '请输入新路径',
+    pleaseSpecifyTargetPath: '请指定目标路径',
+    renameMove: '重命名/移动',
+    uploadFiles: '上传文件',
+    uploadFirstFile: '上传第一个文件',
+    uploadProgress: '上传进度'
   },
 
   // API 密钥
@@ -323,7 +350,20 @@ export default {
     addPermissionSuccess: '权限已添加',
     addPermissionFailed: '添加权限失败',
     removePermissionSuccess: '权限已移除',
-    removePermissionFailed: '移除权限失败'
+    removePermissionFailed: '移除权限失败',
+add: '添加',
+    deleteKey: '删除密钥',
+    disabled: '已禁用',
+    enabled: '已启用',
+    noKeys: '暂无 API 密钥',
+    permissionAdded: '权限已添加',
+    permissionRemoved: '权限已移除',
+    remove: '移除',
+    reset: '重置',
+    resetSecretKey: '重置密钥',
+    saveSecretNow: '请立即保存您的密钥',
+    savedMyKey: '我已保存我的 API 密钥',
+    secretOnlyOnce: '密钥只显示一次'
   },
 
   // 工具箱
@@ -444,6 +484,7 @@ export default {
     maxSize: '最大大小 (MB)',
     noLimit: '0 = 无限制',
     contentType: 'Content Type',
+    contentTypePlaceholder: '例如 image/jpeg',
     generateUrl: '生成 URL',
     clear: '清除',
     generatedUrl: '生成的 URL',
@@ -456,9 +497,37 @@ export default {
     endpoint: 'Endpoint',
     region: 'Region',
 
+    regionPlaceholder: 'us-east-1',
+    accessKeyPlaceholder: 'Access Key ID',
+    secretKeyPlaceholder: 'Secret Access Key',
+    bucketPlaceholder: 'bucket-name',
     awsCliConfig: 'AWS CLI 配置',
     copyConfig: '复制配置',
-    usageExamples: '使用示例'
+    usageExamples: '使用示例',
+    bucketsCount: '存储桶数量',
+    cancelFailed: '取消失败',
+    clickCheckHint: '点击开始检查',
+    clickScanHint: '点击开始扫描',
+    confirmCancel: '确认取消',
+    confirmDelete: '确认删除',
+    confirmGarbageCollection: '确认执行垃圾回收',
+    confirmRepairTitle: '确认修复',
+    createMigrationFailed: '创建迁移任务失败',
+    createMigrationJob: '创建迁移任务',
+    dataIntegrityCheck: '数据完整性检查',
+    deleteFailed: '删除失败',
+    deleteRemove: '删除',
+    gcCompleted: '垃圾回收完成',
+    key: '键',
+    maxSizeMB: '最大大小(MB)',
+    modified: '修改时间',
+    no: '否',
+    path: '路径',
+    selectBucketAndPath: '选择存储桶和路径',
+    size: '大小',
+    status: '状态',
+    uploadId: '上传 ID',
+    yes: '是'
   },
 
   // 审计日志
@@ -505,13 +574,29 @@ export default {
       object_delete: '删除对象',
       batch_delete: '批量删除'
     },
-    // 操作分组
-    actionGroups: {
-      auth: '认证相关',
-      system: '系统相关',
-      bucket: '桶操作',
-      apikey: 'API Key'
-    }
+    actions: {
+      apikeyCreate: '创建 API 密钥',
+      apikeyDelPerm: '删除 API 密钥权限',
+      apikeyDelete: '删除 API 密钥',
+      apikeyResetSecret: '重置 API 密钥',
+      apikeySetPerm: '设置 API 密钥权限',
+      apikeyUpdate: '更新 API 密钥',
+      bucketCreate: '创建存储桶',
+      bucketDelete: '删除存储桶',
+      bucketSetPrivate: '设置存储桶为私有',
+      bucketSetPublic: '设置存储桶为公有',
+      loginFailed: '登录失败',
+      passwordReset: '重置密码',
+      systemInstall: '系统安装'
+    },
+    apikeyOps: 'API 密钥操作',
+    authRelated: '认证相关',
+    bucketOps: '存储桶操作',
+    details: '详情',
+    operation: '操作',
+    operationType: '操作类型',
+    operator: '操作者',
+    systemRelated: '系统相关'
   },
 
   // 设置
@@ -558,7 +643,14 @@ export default {
     passwordMismatch: '两次输入的新密码不一致',
     passwordTooShort: '新密码至少6个字符',
     changePasswordSuccess: '密码修改成功',
-    changePasswordFailed: '修改失败'
+    changePasswordFailed: '修改失败',
+    changeFailed: '修改失败',
+    dataDir: '数据目录',
+    fillAllFields: '请填写所有字段',
+    passwordChanged: '密码已修改',
+    presignUploadLimit: '预签名上传限制',
+    presignUploadLimitHint: '预签名 URL 上传的最大大小',
+    readonly: '只读'
   },
 
   // 语言切换

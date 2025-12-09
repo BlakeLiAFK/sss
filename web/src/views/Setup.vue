@@ -40,7 +40,7 @@
           <el-divider :content-position="'left'">{{ t('setup.adminAccount') }}</el-divider>
 
           <el-form-item :label="t('setup.adminUsername')" prop="adminUsername">
-            <el-input v-model="form.adminUsername" placeholder="admin" :prefix-icon="User" />
+            <el-input v-model="form.adminUsername" :placeholder="t('setup.adminUsernamePlaceholder')" :prefix-icon="User" />
           </el-form-item>
 
           <el-form-item :label="t('setup.adminPassword')" prop="adminPassword">
@@ -68,18 +68,18 @@
           <el-row :gutter="16">
             <el-col :span="16">
               <el-form-item :label="t('setup.listenAddress')">
-                <el-input v-model="form.serverHost" placeholder="0.0.0.0" />
+                <el-input v-model="form.serverHost" :placeholder="t('setup.listenAddressPlaceholder')" />
               </el-form-item>
             </el-col>
             <el-col :span="8">
               <el-form-item :label="t('setup.port')">
-                <el-input v-model="form.serverPort" placeholder="8080" />
+                <el-input v-model="form.serverPort" :placeholder="t('setup.portPlaceholder')" />
               </el-form-item>
             </el-col>
           </el-row>
 
           <el-form-item :label="t('setup.region')">
-            <el-input v-model="form.serverRegion" placeholder="us-east-1" />
+            <el-input v-model="form.serverRegion" :placeholder="t('setup.regionPlaceholder')" />
           </el-form-item>
         </el-form>
 

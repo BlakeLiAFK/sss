@@ -20,7 +20,7 @@
     <div class="page-header">
       <div class="page-title">
         <div class="breadcrumb">
-          <router-link to="/buckets" class="breadcrumb-link">{{ t('objects.buckets') }}</router-link>
+          <router-link to="/buckets" class="breadcrumb-link">{{ t('buckets.title') }}</router-link>
           <el-icon class="breadcrumb-separator"><ArrowRight /></el-icon>
           <span class="breadcrumb-current">{{ bucketName }}</span>
           <span v-if="prefix" class="breadcrumb-prefix">/ {{ prefix }}</span>
@@ -642,12 +642,12 @@ async function startUpload() {
   }, hasError ? 3000 : 1500)
 }
 
-function handleDragEnter(e: DragEvent) {
+function handleDragEnter(_e: DragEvent) {
   dragCounter++
   isDragging.value = true
 }
 
-function handleDragLeave(e: DragEvent) {
+function handleDragLeave(_e: DragEvent) {
   dragCounter--
   if (dragCounter <= 0) {
     dragCounter = 0

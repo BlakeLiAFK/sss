@@ -78,7 +78,8 @@ export default {
     enterAgain: 'Enter password again',
     passwordMismatch: 'Passwords do not match',
     resetSuccess: 'Password reset successful, please login with new password',
-    resetFailed: 'Reset failed'
+    resetFailed: 'Reset failed',
+pleaseConfirmPassword: 'Please confirm your password'
   },
 
   // Setup page
@@ -103,8 +104,12 @@ export default {
     enterAgain: 'Enter password again',
     serverConfig: 'Server Configuration (Optional)',
     listenAddress: 'Listen Address',
+    listenAddressPlaceholder: '0.0.0.0',
     port: 'Port',
+    portPlaceholder: '8080',
     region: 'Region',
+    regionPlaceholder: 'us-east-1',
+    adminUsernamePlaceholder: 'admin',
     install: 'Complete Installation',
     installing: 'Installing...',
     installSuccess: 'Installation successful',
@@ -184,7 +189,10 @@ export default {
     deleteFailed: 'Failed to delete bucket',
     loadFailed: 'Failed to load buckets',
     accessUpdated: 'Bucket is now {access}',
-    updateAccessFailed: 'Failed to update access'
+    updateAccessFailed: 'Failed to update access',
+deleteBucket: 'Delete Bucket',
+    nowPrivate: 'Bucket is now Private',
+    nowPublic: 'Bucket is now Public'
   },
 
   // Objects
@@ -262,7 +270,26 @@ export default {
     batchDeleteFailed: 'Batch delete failed',
     batchDownloadSuccess: 'Downloaded {count} files as ZIP',
     batchDownloadFailed: 'Batch download failed',
-    loadPreviewFailed: 'Failed to load preview'
+    loadPreviewFailed: 'Failed to load preview',
+batchDelete: 'Batch Delete',
+    browserNoAudioSupport: 'Your browser does not support audio playback',
+    browserNoVideoSupport: 'Your browser does not support video playback',
+    buckets: 'Buckets',
+    changePathHint: 'Click to change path',
+    clear: 'Clear',
+    deleteAll: 'Delete All',
+    deleteFile: 'Delete File',
+    dropFilesHere: 'Drop files here to upload',
+    enterNewPath: 'Enter new path',
+    file: 'File',
+    fileTypeCannotPreview: 'File Type Cannot Preview',
+    noFilesFound: 'No Files Found',
+    pleaseEnterNewPath: 'Please Enter New Path',
+    pleaseSpecifyTargetPath: 'Please Specify Target Path',
+    renameMove: 'Rename Move',
+    uploadFiles: 'Upload Files',
+    uploadFirstFile: 'Upload First File',
+    uploadProgress: 'Upload Progress'
   },
 
   // API Keys
@@ -323,7 +350,20 @@ export default {
     addPermissionSuccess: 'Permission added',
     addPermissionFailed: 'Failed to add permission',
     removePermissionSuccess: 'Permission removed',
-    removePermissionFailed: 'Failed to remove permission'
+    removePermissionFailed: 'Failed to remove permission',
+add: 'Add',
+    deleteKey: 'Delete Key',
+    disabled: 'Disabled',
+    enabled: 'Enabled',
+    noKeys: 'No API keys',
+    permissionAdded: 'Permission added',
+    permissionRemoved: 'Permission removed',
+    remove: 'Remove',
+    reset: 'Reset',
+    resetSecretKey: 'Reset Secret Key',
+    saveSecretNow: 'Save your secret key now',
+    savedMyKey: 'I have saved my API key',
+    secretOnlyOnce: 'The secret key is only shown once'
   },
 
   // Tools
@@ -444,6 +484,7 @@ export default {
     maxSize: 'Max Size (MB)',
     noLimit: '0 = no limit',
     contentType: 'Content Type',
+    contentTypePlaceholder: 'e.g., image/jpeg',
     generateUrl: 'Generate URL',
     clear: 'Clear',
     generatedUrl: 'Generated URL',
@@ -456,9 +497,37 @@ export default {
     endpoint: 'Endpoint',
     region: 'Region',
 
+    regionPlaceholder: 'us-east-1',
+    accessKeyPlaceholder: 'Access Key ID',
+    secretKeyPlaceholder: 'Secret Access Key',
+    bucketPlaceholder: 'bucket-name',
     awsCliConfig: 'AWS CLI Configuration',
     copyConfig: 'Copy Config',
-    usageExamples: 'Usage Examples'
+    usageExamples: 'Usage Examples',
+    bucketsCount: 'Buckets Count',
+    cancelFailed: 'Cancel Failed',
+    clickCheckHint: 'Click Check Hint',
+    clickScanHint: 'Click Scan Hint',
+    confirmCancel: 'Confirm Cancel',
+    confirmDelete: 'Confirm Delete',
+    confirmGarbageCollection: 'Confirm Garbage Collection',
+    confirmRepairTitle: 'Confirm Repair Title',
+    createMigrationFailed: 'Create Migrationfailed',
+    createMigrationJob: 'Create Migrationjob',
+    dataIntegrityCheck: 'Data Integrity Check',
+    deleteFailed: 'Delete Failed',
+    deleteRemove: 'Delete Remove',
+    gcCompleted: 'Gc Completed',
+    key: 'Key',
+    maxSizeMB: 'Max Size M B',
+    modified: 'Modified',
+    no: 'No',
+    path: 'Path',
+    selectBucketAndPath: 'Select Bucket And Path',
+    size: 'Size',
+    status: 'Status',
+    uploadId: 'Upload Id',
+    yes: 'Yes'
   },
 
   // Audit Logs
@@ -505,13 +574,29 @@ export default {
       object_delete: 'Delete Object',
       batch_delete: 'Batch Delete'
     },
-    // Action groups
-    actionGroups: {
-      auth: 'Authentication',
-      system: 'System',
-      bucket: 'Bucket Operations',
-      apikey: 'API Key'
-    }
+    actions: {
+      apikeyCreate: 'Create API Key',
+      apikeyDelPerm: 'Delete API Key Permission',
+      apikeyDelete: 'Delete API Key',
+      apikeyResetSecret: 'Reset API Key Secret',
+      apikeySetPerm: 'Set API Key Permission',
+      apikeyUpdate: 'Update API Key',
+      bucketCreate: 'Create Bucket',
+      bucketDelete: 'Delete Bucket',
+      bucketSetPrivate: 'Set Bucket Private',
+      bucketSetPublic: 'Set Bucket Public',
+      loginFailed: 'Login Failed',
+      passwordReset: 'Password Reset',
+      systemInstall: 'System Install'
+    },
+    apikeyOps: 'API Key Operations',
+    authRelated: 'Auth Related',
+    bucketOps: 'Bucket Operations',
+    details: 'Details',
+    operation: 'Operation',
+    operationType: 'Operation Type',
+    operator: 'Operator',
+    systemRelated: 'System Related'
   },
 
   // Settings
@@ -558,7 +643,14 @@ export default {
     passwordMismatch: 'New passwords do not match',
     passwordTooShort: 'New password must be at least 6 characters',
     changePasswordSuccess: 'Password changed successfully',
-    changePasswordFailed: 'Failed to change password'
+    changePasswordFailed: 'Failed to change password',
+changeFailed: 'Settings Changefailed',
+    dataDir: 'Settings Datadir',
+    fillAllFields: 'Settings Fillallfields',
+    passwordChanged: 'Settings Passwordchanged',
+    presignUploadLimit: 'Settings Presignuploadlimit',
+    presignUploadLimitHint: 'Settings Presignuploadlimithint',
+    readonly: 'Settings Readonly'
   },
 
   // Language switch

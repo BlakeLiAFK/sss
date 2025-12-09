@@ -358,7 +358,7 @@
             </el-col>
             <el-col :span="8">
               <el-form-item :label="t('tools.region')">
-                <el-input v-model="migrateForm.sourceRegion" placeholder="us-east-1" />
+                <el-input v-model="migrateForm.sourceRegion" :placeholder="t('tools.regionPlaceholder')" />
               </el-form-item>
             </el-col>
           </el-row>
@@ -366,7 +366,7 @@
           <el-row :gutter="16">
             <el-col :span="12">
               <el-form-item :label="t('tools.accessKey')" required>
-                <el-input v-model="migrateForm.sourceAccessKey" placeholder="Access Key ID" />
+                <el-input v-model="migrateForm.sourceAccessKey" :placeholder="t('tools.accessKeyPlaceholder')" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
@@ -374,7 +374,7 @@
                 <el-input
                   v-model="migrateForm.sourceSecretKey"
                   type="password"
-                  placeholder="Secret Access Key"
+                  :placeholder="t('tools.secretKeyPlaceholder')"
                   show-password
                 />
               </el-form-item>
@@ -384,7 +384,7 @@
           <el-row :gutter="16">
             <el-col :span="12">
               <el-form-item :label="t('tools.sourceBucket')" required>
-                <el-input v-model="migrateForm.sourceBucket" placeholder="bucket-name" />
+                <el-input v-model="migrateForm.sourceBucket" :placeholder="t('tools.bucketPlaceholder')" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
@@ -503,7 +503,7 @@
                 </el-col>
                 <el-col :span="12">
                   <el-form-item :label="t('tools.contentType')">
-                    <el-input v-model="presignForm.contentType" placeholder="e.g., image/jpeg" />
+                    <el-input v-model="presignForm.contentType" :placeholder="t('tools.contentTypePlaceholder')" />
                   </el-form-item>
                 </el-col>
               </el-row>
@@ -574,13 +574,13 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CopyDocument, Search, Delete, CircleCheck, Refresh, Link, Close, Timer, Check, Warning } from '@element-plus/icons-vue'
+import { CopyDocument, Search, Delete, CircleCheck, Refresh, Link, Close } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { listBuckets, listObjects, generatePresignedUrl, type Bucket, type S3Object } from '../api/admin'
 import {
   scanGC, executeGC, type GCResult,
   checkIntegrity, repairIntegrity, type IntegrityResult,
-  listMigrateJobs, createMigrateJob, getMigrateProgress, cancelMigrateJob, deleteMigrateJob, validateMigrateConfig,
+  listMigrateJobs, createMigrateJob, cancelMigrateJob, deleteMigrateJob, validateMigrateConfig,
   type MigrateConfig, type MigrateProgress,
   getSettings
 } from '../api/admin'

@@ -50,7 +50,7 @@
             <el-option :label="t('auditLogs.actions.bucketSetPublic')" value="bucket_set_public" />
             <el-option :label="t('auditLogs.actions.bucketSetPrivate')" value="bucket_set_private" />
           </el-option-group>
-          <el-option-group label="API Key">
+          <el-option-group :label="t('auditLogs.apikeyOps')">
             <el-option :label="t('auditLogs.actions.apikeyCreate')" value="apikey_create" />
             <el-option :label="t('auditLogs.actions.apikeyDelete')" value="apikey_delete" />
             <el-option :label="t('auditLogs.actions.apikeyUpdate')" value="apikey_update" />
@@ -117,7 +117,7 @@
             </template>
           </el-table-column>
           <el-table-column prop="actor" :label="t('auditLogs.operator')" width="90" />
-          <el-table-column label="IP" width="130">
+          <el-table-column :label="t('auditLogs.ipAddress')" width="130">
             <template #default="{ row }">
               <span class="ip-cell">{{ row.ip || '-' }}</span>
             </template>

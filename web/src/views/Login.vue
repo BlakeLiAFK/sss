@@ -11,14 +11,6 @@
       </div>
 
       <el-form :model="form" :rules="rules" ref="formRef" class="login-form">
-        <el-form-item prop="endpoint">
-          <el-input
-            v-model="form.endpoint"
-            :placeholder="t('login.serverEndpoint')"
-            :prefix-icon="Link"
-            size="large"
-          />
-        </el-form-item>
         <el-form-item prop="username">
           <el-input
             v-model="form.username"
@@ -111,7 +103,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, type FormInstance } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
-import { User, Lock, Link } from '@element-plus/icons-vue'
+import { User, Lock } from '@element-plus/icons-vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import axios from 'axios'
 import { getBaseUrl } from '../api/client'
@@ -124,14 +116,15 @@ const formRef = ref<FormInstance>()
 const resetFormRef = ref<FormInstance>()
 const loading = ref(false)
 
+// 服务器地址始终使用当前域名
+const endpoint = getBaseUrl()
+
 const form = reactive({
-  endpoint: auth.endpoint || getBaseUrl(),
   username: 'admin',
   password: ''
 })
 
 const rules = {
-  endpoint: [{ required: true, message: t('login.pleaseEnterEndpoint'), trigger: 'blur' }],
   username: [{ required: true, message: t('login.pleaseEnterUsername'), trigger: 'blur' }],
   password: [{ required: true, message: t('login.pleaseEnterPassword'), trigger: 'blur' }]
 }
@@ -174,7 +167,7 @@ async function handleLogin() {
 
     loading.value = true
     try {
-      const response = await axios.post(`${form.endpoint}/api/admin/login`, {
+      const response = await axios.post(`${endpoint}/api/admin/login`, {
         username: form.username,
         password: form.password
       })
@@ -182,7 +175,7 @@ async function handleLogin() {
       if (response.data.success) {
         auth.login(
           response.data.token,
-          form.endpoint,
+          endpoint,
           response.data.accessKeyId || '',
           response.data.secretAccessKey || ''
         )
@@ -204,7 +197,7 @@ async function handleLogin() {
 async function checkResetFile() {
   checkingFile.value = true
   try {
-    const response = await axios.get(`${form.endpoint}/api/setup/reset-password/check`)
+    const response = await axios.get(`${endpoint}/api/setup/reset-password/check`)
     if (response.data.file_exists) {
       resetFileExists.value = true
       ElMessage.success(t('login.fileDetected'))
@@ -249,7 +242,7 @@ async function handleResetPassword() {
 
     resetting.value = true
     try {
-      const response = await axios.post(`${form.endpoint}/api/setup/reset-password`, {
+      const response = await axios.post(`${endpoint}/api/setup/reset-password`, {
         new_password: resetForm.newPassword
       })
 

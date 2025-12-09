@@ -32,7 +32,7 @@ const i18n = createI18n({
 // 切换语言
 export function setLocale(locale: string) {
   if (['zh-CN', 'en-US'].includes(locale)) {
-    i18n.global.locale.value = locale
+    i18n.global.locale.value = locale as 'zh-CN' | 'en-US'
     localStorage.setItem('locale', locale)
     // 更新 HTML lang 属性
     document.documentElement.lang = locale === 'zh-CN' ? 'zh' : 'en'
