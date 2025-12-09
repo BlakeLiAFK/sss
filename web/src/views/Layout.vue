@@ -42,7 +42,7 @@
         </div>
         <button class="logout-btn" @click="handleLogout">
           <el-icon :size="16"><SwitchButton /></el-icon>
-          <span>退出</span>
+          <span>{{ t('layout.logout') }}</span>
         </button>
       </div>
     </aside>
@@ -69,29 +69,39 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../stores/auth'
-import { 
-  Folder, Key, Tools, User, SwitchButton, DataAnalysis, List, 
-  Menu, Close, Box, Setting 
+import {
+  Folder, Key, Tools, User, SwitchButton, DataAnalysis, List,
+  Menu, Close, Box, Setting
 } from '@element-plus/icons-vue'
 import axios from 'axios'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const sidebarOpen = ref(false)
 
-const menuItems = [
-  { name: 'Dashboard', label: '仪表盘', icon: DataAnalysis },
-  { name: 'Buckets', label: '存储桶', icon: Folder },
-  { name: 'ApiKeys', label: 'API 密钥', icon: Key },
-  { name: 'Tools', label: '工具箱', icon: Tools },
-  { name: 'AuditLogs', label: '审计日志', icon: List },
-  { name: 'Settings', label: '系统设置', icon: Setting }
+const menuItemsConfig = [
+  { name: 'Dashboard', labelKey: 'layout.dashboard', icon: DataAnalysis },
+  { name: 'Buckets', labelKey: 'layout.buckets', icon: Folder },
+  { name: 'ApiKeys', labelKey: 'layout.apiKeys', icon: Key },
+  { name: 'Tools', labelKey: 'layout.tools', icon: Tools },
+  { name: 'AuditLogs', labelKey: 'layout.auditLogs', icon: List },
+  { name: 'Settings', labelKey: 'layout.settings', icon: Setting }
 ]
 
+const menuItems = computed(() =>
+  menuItemsConfig.map(item => ({
+    ...item,
+    label: t(item.labelKey)
+  }))
+)
+
 const currentPageTitle = computed(() => {
-  const item = menuItems.find(m => isActive(m.name))
+  const item = menuItems.value.find(m => isActive(m.name))
   return item?.label || 'SSS'
 })
 
