@@ -47,15 +47,17 @@ const (
 
 // AuditLog 审计日志
 type AuditLog struct {
-	ID        int64       `json:"id"`
-	Timestamp time.Time   `json:"timestamp"`
-	Action    AuditAction `json:"action"`
-	Actor     string      `json:"actor"`      // 操作者（用户名或 API Key ID）
-	IP        string      `json:"ip"`         // 客户端 IP
-	Resource  string      `json:"resource"`   // 资源（桶名、对象键等）
-	Detail    string      `json:"detail"`     // 详细信息（JSON 格式）
-	Success   bool        `json:"success"`    // 是否成功
-	UserAgent string      `json:"user_agent"` // 客户端 User-Agent
+	ID          int64       `json:"id"`
+	Timestamp   time.Time   `json:"timestamp"`
+	Action      AuditAction `json:"action"`
+	Actor       string      `json:"actor"`        // 操作者（用户名或 API Key ID）
+	IP          string      `json:"ip"`           // 直连 IP（RemoteAddr）
+	ForwardedIP string      `json:"forwarded_ip"` // 代理转发的客户端 IP（X-Forwarded-For 等）
+	Location    string      `json:"location"`     // IP 地理位置（如果启用 GeoIP）
+	Resource    string      `json:"resource"`     // 资源（桶名、对象键等）
+	Detail      string      `json:"detail"`       // 详细信息（JSON 格式）
+	Success     bool        `json:"success"`      // 是否成功
+	UserAgent   string      `json:"user_agent"`   // 客户端 User-Agent
 }
 
 // initAuditTable 初始化审计日志表
@@ -66,6 +68,7 @@ func (m *MetadataStore) initAuditTable() error {
 		action TEXT NOT NULL,
 		actor TEXT NOT NULL DEFAULT '',
 		ip TEXT NOT NULL DEFAULT '',
+		forwarded_ip TEXT NOT NULL DEFAULT '',
 		resource TEXT NOT NULL DEFAULT '',
 		detail TEXT NOT NULL DEFAULT '',
 		success INTEGER NOT NULL DEFAULT 1,
@@ -87,6 +90,12 @@ func (m *MetadataStore) initAuditTable() error {
 			return err
 		}
 	}
+
+	// 迁移：为旧表添加 forwarded_ip 列（如果不存在）
+	m.db.Exec(`ALTER TABLE audit_logs ADD COLUMN forwarded_ip TEXT NOT NULL DEFAULT ''`)
+	// 迁移：为旧表添加 location 列（如果不存在）
+	m.db.Exec(`ALTER TABLE audit_logs ADD COLUMN location TEXT NOT NULL DEFAULT ''`)
+
 	return nil
 }
 
@@ -103,9 +112,9 @@ func (m *MetadataStore) WriteAuditLog(log *AuditLog) error {
 
 	return m.withWriteLock(func() error {
 		_, err := m.db.Exec(`
-			INSERT INTO audit_logs (timestamp, action, actor, ip, resource, detail, success, user_agent)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			log.Timestamp, log.Action, log.Actor, log.IP, log.Resource, log.Detail, successInt, log.UserAgent,
+			INSERT INTO audit_logs (timestamp, action, actor, ip, forwarded_ip, location, resource, detail, success, user_agent)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			log.Timestamp, log.Action, log.Actor, log.IP, log.ForwardedIP, log.Location, log.Resource, log.Detail, successInt, log.UserAgent,
 		)
 		return err
 	})
@@ -189,7 +198,7 @@ func (m *MetadataStore) QueryAuditLogs(query *AuditLogQuery) ([]AuditLog, int, e
 		query.Limit = 1000
 	}
 
-	dataSQL := "SELECT id, timestamp, action, actor, ip, resource, detail, success, user_agent FROM audit_logs " +
+	dataSQL := "SELECT id, timestamp, action, actor, ip, forwarded_ip, location, resource, detail, success, user_agent FROM audit_logs " +
 		whereClause + " ORDER BY timestamp DESC LIMIT ? OFFSET ?"
 	args = append(args, query.Limit, query.Offset)
 
@@ -204,7 +213,7 @@ func (m *MetadataStore) QueryAuditLogs(query *AuditLogQuery) ([]AuditLog, int, e
 		var log AuditLog
 		var successInt int
 		if err := rows.Scan(&log.ID, &log.Timestamp, &log.Action, &log.Actor, &log.IP,
-			&log.Resource, &log.Detail, &successInt, &log.UserAgent); err != nil {
+			&log.ForwardedIP, &log.Location, &log.Resource, &log.Detail, &successInt, &log.UserAgent); err != nil {
 			return nil, 0, err
 		}
 		log.Success = successInt == 1
@@ -221,7 +230,7 @@ func (m *MetadataStore) GetRecentAuditLogs(limit int) ([]AuditLog, error) {
 	}
 
 	rows, err := m.db.Query(`
-		SELECT id, timestamp, action, actor, ip, resource, detail, success, user_agent
+		SELECT id, timestamp, action, actor, ip, forwarded_ip, location, resource, detail, success, user_agent
 		FROM audit_logs ORDER BY timestamp DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -233,7 +242,7 @@ func (m *MetadataStore) GetRecentAuditLogs(limit int) ([]AuditLog, error) {
 		var log AuditLog
 		var successInt int
 		if err := rows.Scan(&log.ID, &log.Timestamp, &log.Action, &log.Actor, &log.IP,
-			&log.Resource, &log.Detail, &successInt, &log.UserAgent); err != nil {
+			&log.ForwardedIP, &log.Location, &log.Resource, &log.Detail, &successInt, &log.UserAgent); err != nil {
 			return nil, err
 		}
 		log.Success = successInt == 1

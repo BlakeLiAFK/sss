@@ -103,6 +103,8 @@ func (h *Handler) handleAuditStats(w http.ResponseWriter, r *http.Request) {
 }
 
 // Audit 记录审计日志的辅助方法
+// 同时记录直连 IP (RemoteAddr) 和代理转发的 IP (X-Forwarded-For 等)
+// 如果启用了 GeoIP，还会记录地理位置信息
 func (h *Handler) Audit(r *http.Request, action storage.AuditAction, actor, resource string, success bool, detail interface{}) {
 	var detailStr string
 	if detail != nil {
@@ -115,15 +117,29 @@ func (h *Handler) Audit(r *http.Request, action storage.AuditAction, actor, reso
 		}
 	}
 
+	// 获取双 IP：直连 IP 和代理转发的 IP
+	directIP, forwardedIP := utils.GetClientIPs(r)
+
+	// 查询地理位置（优先使用客户端真实 IP）
+	var location string
+	geoIP := utils.GetGeoIPService()
+	if geoIP.IsEnabled() {
+		// 优先使用 GetClientIP 返回的真实客户端 IP
+		clientIP := utils.GetClientIP(r)
+		location = geoIP.LookupString(clientIP)
+	}
+
 	log := &storage.AuditLog{
-		Timestamp: time.Now().UTC(),
-		Action:    action,
-		Actor:     actor,
-		IP:        utils.GetClientIP(r),
-		Resource:  resource,
-		Detail:    detailStr,
-		Success:   success,
-		UserAgent: utils.GetUserAgent(r),
+		Timestamp:   time.Now().UTC(),
+		Action:      action,
+		Actor:       actor,
+		IP:          directIP,
+		ForwardedIP: forwardedIP,
+		Location:    location,
+		Resource:    resource,
+		Detail:      detailStr,
+		Success:     success,
+		UserAgent:   utils.GetUserAgent(r),
 	}
 
 	if err := h.metadata.WriteAuditLog(log); err != nil {

@@ -21,6 +21,51 @@ A lightweight, self-hosted S3-compatible object storage server with a built-in w
 
 Download the latest release from [Releases](https://github.com/BlakeLiAFK/sss/releases) page.
 
+#### Quick Install via wget/curl
+
+**Linux (amd64)**
+
+```bash
+# 获取最新版本号
+VERSION=$(curl -s https://api.github.com/repos/BlakeLiAFK/sss/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+
+# 下载并解压
+wget -qO- https://github.com/BlakeLiAFK/sss/releases/download/${VERSION}/sss-linux-amd64.tar.gz | tar xz
+
+# 添加执行权限
+chmod +x sss-linux-amd64
+```
+
+**Linux (arm64)**
+
+```bash
+VERSION=$(curl -s https://api.github.com/repos/BlakeLiAFK/sss/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+wget -qO- https://github.com/BlakeLiAFK/sss/releases/download/${VERSION}/sss-linux-arm64.tar.gz | tar xz
+chmod +x sss-linux-arm64
+```
+
+**macOS (Apple Silicon)**
+
+```bash
+VERSION=$(curl -s https://api.github.com/repos/BlakeLiAFK/sss/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+curl -sL https://github.com/BlakeLiAFK/sss/releases/download/${VERSION}/sss-darwin-arm64.tar.gz | tar xz
+chmod +x sss-darwin-arm64
+```
+
+**macOS (Intel)**
+
+```bash
+VERSION=$(curl -s https://api.github.com/repos/BlakeLiAFK/sss/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+curl -sL https://github.com/BlakeLiAFK/sss/releases/download/${VERSION}/sss-darwin-amd64.tar.gz | tar xz
+chmod +x sss-darwin-amd64
+```
+
+**One-liner (Linux amd64)**
+
+```bash
+curl -sL $(curl -s https://api.github.com/repos/BlakeLiAFK/sss/releases/latest | grep 'browser_download_url.*linux-amd64.tar.gz' | cut -d'"' -f4) | tar xz && chmod +x sss-linux-amd64
+```
+
 ### Run
 
 ```bash

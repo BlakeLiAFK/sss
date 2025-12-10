@@ -56,6 +56,15 @@ func main() {
 	// 4. 从数据库加载配置（如果已安装）
 	config.LoadFromDB(metadata)
 
+	// 4.1 初始化信任代理缓存
+	utils.ReloadTrustedProxies(config.Global.Security.TrustedProxies)
+	if config.Global.Security.TrustedProxies != "" {
+		utils.Info("信任代理已配置", "cidrs", config.Global.Security.TrustedProxies)
+	}
+
+	// 4.2 初始化 GeoIP 服务
+	utils.InitGeoIP(config.Global.Storage.DataPath)
+
 	// 5. 初始化文件存储（使用可能更新后的路径）
 	filestore, err := storage.NewFileStore(config.Global.Storage.DataPath)
 	if err != nil {

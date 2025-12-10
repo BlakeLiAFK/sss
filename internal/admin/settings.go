@@ -2,7 +2,10 @@ package admin
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -21,8 +24,9 @@ type SettingsResponse struct {
 
 // SecuritySettings 安全设置（可在线修改）
 type SecuritySettings struct {
-	CORSOrigin    string `json:"cors_origin"`    // CORS 允许的来源，默认 "*"
-	PresignScheme string `json:"presign_scheme"` // 预签名URL协议，"http" 或 "https"
+	CORSOrigin     string `json:"cors_origin"`     // CORS 允许的来源，默认 "*"
+	PresignScheme  string `json:"presign_scheme"`  // 预签名URL协议，"http" 或 "https"
+	TrustedProxies string `json:"trusted_proxies"` // 信任的代理 IP/CIDR，逗号分隔
 }
 
 // RuntimeSettings 运行时参数（启动时确定，不可在线修改）
@@ -78,8 +82,9 @@ func (h *Handler) getSettings(w http.ResponseWriter, r *http.Request) {
 
 	// 安全设置（可在线修改）
 	security := SecuritySettings{
-		CORSOrigin:    config.Global.Security.CORSOrigin,
-		PresignScheme: config.Global.Security.PresignScheme,
+		CORSOrigin:     config.Global.Security.CORSOrigin,
+		PresignScheme:  config.Global.Security.PresignScheme,
+		TrustedProxies: config.Global.Security.TrustedProxies,
 	}
 	// 确保有默认值
 	if security.CORSOrigin == "" {
@@ -108,11 +113,12 @@ func (h *Handler) getSettings(w http.ResponseWriter, r *http.Request) {
 
 // UpdateSettingsRequest 更新设置请求（只包含可修改的字段）
 type UpdateSettingsRequest struct {
-	Region        *string `json:"region,omitempty"`
-	MaxObjectSize *int64  `json:"max_object_size,omitempty"`
-	MaxUploadSize *int64  `json:"max_upload_size,omitempty"`
-	CORSOrigin    *string `json:"cors_origin,omitempty"`
-	PresignScheme *string `json:"presign_scheme,omitempty"`
+	Region         *string `json:"region,omitempty"`
+	MaxObjectSize  *int64  `json:"max_object_size,omitempty"`
+	MaxUploadSize  *int64  `json:"max_upload_size,omitempty"`
+	CORSOrigin     *string `json:"cors_origin,omitempty"`
+	PresignScheme  *string `json:"presign_scheme,omitempty"`
+	TrustedProxies *string `json:"trusted_proxies,omitempty"`
 }
 
 // updateSettings 更新系统设置
@@ -179,6 +185,18 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 		config.Global.Security.PresignScheme = scheme
 	}
 
+	// 更新信任代理 IP
+	if req.TrustedProxies != nil {
+		trustedProxies := strings.TrimSpace(*req.TrustedProxies)
+		if err := h.metadata.SetSetting(storage.SettingSecurityTrustedProxies, trustedProxies); err != nil {
+			utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
+			return
+		}
+		config.Global.Security.TrustedProxies = trustedProxies
+		// 热更新信任代理缓存
+		utils.ReloadTrustedProxies(trustedProxies)
+	}
+
 	// 记录审计日志
 	h.Audit(r, storage.AuditActionSettingsUpdate, "admin", "system", true, "更新系统设置")
 
@@ -235,5 +253,134 @@ func (h *Handler) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSONResponse(w, map[string]interface{}{
 		"success": true,
 		"message": "密码修改成功",
+	})
+}
+
+// handleGeoIP 处理 GeoIP 数据库管理
+func (h *Handler) handleGeoIP(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		h.getGeoIPStatus(w, r)
+	case http.MethodPost:
+		h.uploadGeoIP(w, r)
+	case http.MethodDelete:
+		h.deleteGeoIP(w, r)
+	default:
+		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+	}
+}
+
+// GeoIPStatusResponse GeoIP 状态响应
+type GeoIPStatusResponse struct {
+	Enabled bool   `json:"enabled"` // 是否启用
+	Path    string `json:"path"`    // 数据库路径
+}
+
+// getGeoIPStatus 获取 GeoIP 状态
+func (h *Handler) getGeoIPStatus(w http.ResponseWriter, r *http.Request) {
+	geoIP := utils.GetGeoIPService()
+	resp := GeoIPStatusResponse{
+		Enabled: geoIP.IsEnabled(),
+		Path:    utils.GetDefaultGeoIPPath(config.Global.Storage.DataPath),
+	}
+	utils.WriteJSONResponse(w, resp)
+}
+
+// uploadGeoIP 上传 GeoIP 数据库
+func (h *Handler) uploadGeoIP(w http.ResponseWriter, r *http.Request) {
+	// 限制上传大小 (100MB)
+	r.Body = http.MaxBytesReader(w, r.Body, 100*1024*1024)
+
+	// 解析 multipart form
+	if err := r.ParseMultipartForm(100 * 1024 * 1024); err != nil {
+		utils.WriteErrorResponse(w, "InvalidRequest", "文件过大或格式错误", http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		utils.WriteErrorResponse(w, "InvalidRequest", "未找到上传文件", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// 验证文件扩展名
+	if !strings.HasSuffix(strings.ToLower(header.Filename), ".mmdb") {
+		utils.WriteErrorResponse(w, "InvalidRequest", "仅支持 .mmdb 格式的 GeoIP 数据库", http.StatusBadRequest)
+		return
+	}
+
+	// 确保目录存在
+	geoIPPath := utils.GetDefaultGeoIPPath(config.Global.Storage.DataPath)
+	geoIPDir := filepath.Dir(geoIPPath)
+	if err := os.MkdirAll(geoIPDir, 0755); err != nil {
+		utils.WriteErrorResponse(w, "InternalError", "创建目录失败", http.StatusInternalServerError)
+		return
+	}
+
+	// 先保存到临时文件
+	tempPath := geoIPPath + ".tmp"
+	outFile, err := os.Create(tempPath)
+	if err != nil {
+		utils.WriteErrorResponse(w, "InternalError", "创建文件失败", http.StatusInternalServerError)
+		return
+	}
+
+	_, err = io.Copy(outFile, file)
+	outFile.Close()
+	if err != nil {
+		os.Remove(tempPath)
+		utils.WriteErrorResponse(w, "InternalError", "保存文件失败", http.StatusInternalServerError)
+		return
+	}
+
+	// 尝试加载验证
+	geoIP := utils.GetGeoIPService()
+	if err := geoIP.Load(tempPath); err != nil {
+		os.Remove(tempPath)
+		utils.WriteErrorResponse(w, "InvalidRequest", "无效的 GeoIP 数据库: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// 验证通过，移动到正式位置
+	os.Remove(geoIPPath) // 删除旧文件（如果存在）
+	if err := os.Rename(tempPath, geoIPPath); err != nil {
+		os.Remove(tempPath)
+		utils.WriteErrorResponse(w, "InternalError", "移动文件失败", http.StatusInternalServerError)
+		return
+	}
+
+	// 重新加载正式文件
+	geoIP.Load(geoIPPath)
+
+	// 记录审计日志
+	h.Audit(r, storage.AuditActionSettingsUpdate, "admin", "geoip", true, "上传 GeoIP 数据库")
+
+	utils.WriteJSONResponse(w, map[string]interface{}{
+		"success": true,
+		"message": "GeoIP 数据库已上传并启用",
+	})
+}
+
+// deleteGeoIP 删除 GeoIP 数据库
+func (h *Handler) deleteGeoIP(w http.ResponseWriter, r *http.Request) {
+	geoIPPath := utils.GetDefaultGeoIPPath(config.Global.Storage.DataPath)
+
+	// 关闭并禁用 GeoIP 服务
+	geoIP := utils.GetGeoIPService()
+	geoIP.Close()
+
+	// 删除文件
+	if err := os.Remove(geoIPPath); err != nil && !os.IsNotExist(err) {
+		utils.WriteErrorResponse(w, "InternalError", "删除文件失败", http.StatusInternalServerError)
+		return
+	}
+
+	// 记录审计日志
+	h.Audit(r, storage.AuditActionSettingsUpdate, "admin", "geoip", true, "删除 GeoIP 数据库")
+
+	utils.WriteJSONResponse(w, map[string]interface{}{
+		"success": true,
+		"message": "GeoIP 数据库已删除",
 	})
 }

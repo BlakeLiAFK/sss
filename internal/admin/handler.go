@@ -83,6 +83,8 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		h.handleSettings(w, r)
 	case path == "settings/password":
 		h.handleChangePassword(w, r)
+	case path == "settings/geoip":
+		h.handleGeoIP(w, r)
 	default:
 		utils.WriteErrorResponse(w, "NotFound", "API endpoint not found", http.StatusNotFound)
 	}

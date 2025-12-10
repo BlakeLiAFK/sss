@@ -15,8 +15,9 @@ type Config struct {
 
 // SecurityConfig 安全配置
 type SecurityConfig struct {
-	CORSOrigin    string // CORS 允许的来源，默认 "*"
-	PresignScheme string // 预签名URL协议，"http" 或 "https"，默认 "http"
+	CORSOrigin     string // CORS 允许的来源，默认 "*"
+	PresignScheme  string // 预签名URL协议，"http" 或 "https"，默认 "http"
+	TrustedProxies string // 信任的代理 IP/CIDR，逗号分隔（如 Cloudflare IP 范围）
 }
 
 // ServerConfig 服务器配置（启动时通过命令行参数设置，运行时不可改）
@@ -68,8 +69,9 @@ func NewDefault() *Config {
 			AdminUsername: "admin",
 		},
 		Security: SecurityConfig{
-			CORSOrigin:    "*",    // 默认允许所有来源
-			PresignScheme: "http", // 默认 HTTP
+			CORSOrigin:     "*",    // 默认允许所有来源
+			PresignScheme:  "http", // 默认 HTTP
+			TrustedProxies: "",     // 默认不信任任何代理
 		},
 		Log: LogConfig{
 			Level: "info",
@@ -118,6 +120,9 @@ func LoadFromDB(loader SettingsLoader) {
 		}
 		if presignScheme, err := loader.GetSetting("security.presign_scheme"); err == nil && presignScheme != "" {
 			Global.Security.PresignScheme = presignScheme
+		}
+		if trustedProxies, err := loader.GetSetting("security.trusted_proxies"); err == nil {
+			Global.Security.TrustedProxies = trustedProxies
 		}
 
 		// 认证配置

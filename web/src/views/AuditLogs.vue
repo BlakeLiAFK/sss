@@ -85,7 +85,11 @@
           </div>
           <div class="log-info-row">
             <span class="log-label">IP:</span>
-            <span>{{ log.ip || '-' }}</span>
+            <span>{{ log.forwarded_ip || log.ip || '-' }}</span>
+          </div>
+          <div class="log-info-row" v-if="log.location">
+            <span class="log-label">{{ t('auditLogs.location') }}:</span>
+            <span>{{ log.location }}</span>
           </div>
           <div class="log-info-row" v-if="log.resource">
             <span class="log-label">{{ t('auditLogs.resource') }}:</span>
@@ -119,7 +123,20 @@
           <el-table-column prop="actor" :label="t('auditLogs.operator')" width="90" />
           <el-table-column :label="t('auditLogs.ipAddress')" width="130">
             <template #default="{ row }">
-              <span class="ip-cell">{{ row.ip || '-' }}</span>
+              <el-tooltip
+                v-if="row.forwarded_ip && row.forwarded_ip !== row.ip"
+                :content="`${t('auditLogs.directIp')}: ${row.ip}`"
+                placement="top"
+              >
+                <span class="ip-cell">{{ row.forwarded_ip }}</span>
+              </el-tooltip>
+              <span v-else class="ip-cell">{{ row.ip || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('auditLogs.location')" width="120" class-name="hide-on-tablet">
+            <template #default="{ row }">
+              <span v-if="row.location" class="location-cell">{{ row.location }}</span>
+              <span v-else class="no-detail">-</span>
             </template>
           </el-table-column>
           <el-table-column prop="resource" :label="t('auditLogs.resource')" min-width="100" show-overflow-tooltip />
@@ -186,6 +203,8 @@ interface AuditLog {
   action: string
   actor: string
   ip: string
+  forwarded_ip: string
+  location: string
   resource: string
   detail: string
   success: boolean
@@ -545,6 +564,11 @@ onMounted(() => {
 
 .no-detail {
   color: #ccc;
+}
+
+.location-cell {
+  font-size: 12px;
+  color: #666;
 }
 
 .success-icon {

@@ -44,6 +44,7 @@ const (
 	// 安全配置
 	SettingSecurityCORSOrigin     = "security.cors_origin"      // CORS 允许的来源，默认 "*"
 	SettingSecurityPresignScheme  = "security.presign_scheme"   // 预签名URL协议，"http" 或 "https"
+	SettingSecurityTrustedProxies = "security.trusted_proxies"  // 信任的代理 IP/CIDR，逗号分隔
 
 	// 认证配置
 	SettingAuthAdminUsername     = "auth.admin_username"

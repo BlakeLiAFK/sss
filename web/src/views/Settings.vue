@@ -88,6 +88,87 @@
         </div>
       </div>
 
+      <!-- GeoIP 配置 -->
+      <div class="settings-card">
+        <div class="card-header">
+          <el-icon class="card-icon"><Location /></el-icon>
+          <h3>{{ t('settings.geoipConfig') }}</h3>
+          <el-button
+            link
+            type="primary"
+            @click="showGeoipInfo = true"
+            class="info-btn"
+          >
+            <el-icon><QuestionFilled /></el-icon>
+          </el-button>
+        </div>
+        <div class="card-body">
+          <div class="info-item">
+            <span class="info-label">{{ t('common.status') }}</span>
+            <el-tag :type="geoipStatus.enabled ? 'success' : 'info'" size="small">
+              {{ geoipStatus.enabled ? t('settings.geoipEnabled') : t('settings.geoipDisabled') }}
+            </el-tag>
+          </div>
+          <div class="info-item" v-if="geoipStatus.enabled">
+            <span class="info-label">{{ t('settings.geoipPath') }}</span>
+            <span class="info-value mono" style="font-size: 11px;">{{ geoipStatus.path }}</span>
+          </div>
+          <p class="setting-hint" style="margin-top: 12px;">{{ t('settings.geoipHint') }}</p>
+
+          <div class="geoip-actions">
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept=".mmdb"
+              style="display: none;"
+              @change="handleFileChange"
+            />
+            <el-button
+              v-if="!geoipStatus.enabled"
+              type="primary"
+              @click="triggerFileUpload"
+              :loading="geoipUploading"
+              class="primary-btn"
+            >
+              <el-icon v-if="!geoipUploading"><Upload /></el-icon>
+              {{ geoipUploading ? t('settings.geoipUploading') : t('settings.geoipUpload') }}
+            </el-button>
+            <template v-else>
+              <el-button
+                type="primary"
+                @click="triggerFileUpload"
+                :loading="geoipUploading"
+                class="primary-btn"
+              >
+                <el-icon v-if="!geoipUploading"><Upload /></el-icon>
+                {{ geoipUploading ? t('settings.geoipUploading') : t('settings.geoipUpload') }}
+              </el-button>
+              <el-popconfirm
+                :title="t('settings.geoipDeleteConfirm')"
+                :confirm-button-text="t('common.confirm')"
+                :cancel-button-text="t('common.cancel')"
+                @confirm="deleteGeoip"
+              >
+                <template #reference>
+                  <el-button type="danger" plain>
+                    <el-icon><Delete /></el-icon>
+                    {{ t('settings.geoipDelete') }}
+                  </el-button>
+                </template>
+              </el-popconfirm>
+            </template>
+            <a
+              href="https://www.maxmind.com/en/geolite2/signup"
+              target="_blank"
+              class="download-link"
+            >
+              {{ t('settings.geoipDownloadHint') }}
+              <el-icon><el-icon-link /></el-icon>
+            </a>
+          </div>
+        </div>
+      </div>
+
       <!-- 安全设置 -->
       <div class="settings-card">
         <div class="card-header">
@@ -107,6 +188,29 @@
               <el-option label="HTTPS" value="https" />
             </el-select>
             <span class="setting-hint">{{ t('settings.presignSchemeHint') }}</span>
+          </div>
+          <div class="setting-item">
+            <label>{{ t('settings.trustedProxies') }}</label>
+            <div class="trusted-proxies-input">
+              <el-input
+                v-model="settings.security.trusted_proxies"
+                type="textarea"
+                :rows="3"
+                :placeholder="t('settings.trustedProxiesPlaceholder')"
+                :disabled="!editing"
+              />
+              <el-button
+                v-if="editing"
+                size="small"
+                type="primary"
+                plain
+                @click="fillCloudflareIPs"
+                class="preset-btn"
+              >
+                {{ t('settings.cloudflarePreset') }}
+              </el-button>
+            </div>
+            <span class="setting-hint">{{ t('settings.trustedProxiesHint') }}</span>
           </div>
           <div class="setting-item" style="margin-top: 16px;">
             <el-button type="primary" @click="showPasswordDialog = true" class="full-width-btn">
@@ -135,6 +239,24 @@
       </template>
     </div>
 
+    <!-- GeoIP 信息对话框 -->
+    <el-dialog v-model="showGeoipInfo" :title="t('settings.geoipInfoTitle')" width="500px">
+      <p class="geoip-info-content">{{ t('settings.geoipInfoContent') }}</p>
+      <div class="geoip-info-links">
+        <a href="https://www.maxmind.com/en/geolite2/signup" target="_blank" class="info-link">
+          MaxMind GeoLite2 (Free)
+        </a>
+        <a href="https://dev.maxmind.com/geoip/geolite2-free-geolocation-data" target="_blank" class="info-link">
+          Documentation
+        </a>
+      </div>
+      <template #footer>
+        <el-button type="primary" @click="showGeoipInfo = false" class="primary-btn">
+          {{ t('common.close') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 修改密码对话框 -->
     <el-dialog v-model="showPasswordDialog" :title="t('settings.changePassword')" width="400px" :close-on-click-modal="false">
       <el-form :model="passwordForm" label-position="top">
@@ -162,7 +284,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Monitor, FolderOpened, InfoFilled, Lock, Key, Edit, Check } from '@element-plus/icons-vue'
+import { Monitor, FolderOpened, InfoFilled, Lock, Key, Edit, Check, Location, Upload, Delete, QuestionFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import axios from 'axios'
 
@@ -175,6 +297,9 @@ const editing = ref(false)
 const saving = ref(false)
 const showPasswordDialog = ref(false)
 const changingPassword = ref(false)
+const geoipUploading = ref(false)
+const showGeoipInfo = ref(false)
+const fileInputRef = ref<HTMLInputElement | null>(null)
 
 // 设置数据
 const settings = reactive({
@@ -191,13 +316,20 @@ const settings = reactive({
   },
   security: {
     cors_origin: '*',
-    presign_scheme: 'http'
+    presign_scheme: 'http',
+    trusted_proxies: ''
   },
   system: {
     installed: false,
     installed_at: '',
     version: ''
   }
+})
+
+// GeoIP 状态
+const geoipStatus = reactive({
+  enabled: false,
+  path: ''
 })
 
 // 原始设置备份
@@ -277,6 +409,9 @@ async function saveSettings() {
       if (settings.security.presign_scheme !== originalSettings.value.security.presign_scheme) {
         payload.presign_scheme = settings.security.presign_scheme
       }
+      if (settings.security.trusted_proxies !== originalSettings.value.security.trusted_proxies) {
+        payload.trusted_proxies = settings.security.trusted_proxies
+      }
     }
 
     await axios.put(`${auth.endpoint}/api/admin/settings`, payload, {
@@ -334,8 +469,103 @@ function formatDate(dateStr: string): string {
   return date.toLocaleString('zh-CN')
 }
 
+// Cloudflare IP 范围预设
+const cloudflareIPs = [
+  // IPv4
+  '173.245.48.0/20',
+  '103.21.244.0/22',
+  '103.22.200.0/22',
+  '103.31.4.0/22',
+  '141.101.64.0/18',
+  '108.162.192.0/18',
+  '190.93.240.0/20',
+  '188.114.96.0/20',
+  '197.234.240.0/22',
+  '198.41.128.0/17',
+  '162.158.0.0/15',
+  '104.16.0.0/13',
+  '104.24.0.0/14',
+  '172.64.0.0/13',
+  '131.0.72.0/22',
+  // IPv6
+  '2400:cb00::/32',
+  '2606:4700::/32',
+  '2803:f800::/32',
+  '2405:b500::/32',
+  '2405:8100::/32',
+  '2a06:98c0::/29',
+  '2c0f:f248::/32'
+]
+
+function fillCloudflareIPs() {
+  settings.security.trusted_proxies = cloudflareIPs.join('\n')
+}
+
+// GeoIP 相关函数
+async function loadGeoipStatus() {
+  try {
+    const response = await axios.get(`${auth.endpoint}/api/admin/settings/geoip`, {
+      headers: getHeaders()
+    })
+    geoipStatus.enabled = response.data.enabled
+    geoipStatus.path = response.data.path
+  } catch (error) {
+    // 静默失败
+  }
+}
+
+function triggerFileUpload() {
+  fileInputRef.value?.click()
+}
+
+async function handleFileChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  if (!file.name.toLowerCase().endsWith('.mmdb')) {
+    ElMessage.warning(t('settings.geoipSelectFile'))
+    input.value = ''
+    return
+  }
+
+  geoipUploading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    await axios.post(`${auth.endpoint}/api/admin/settings/geoip`, formData, {
+      headers: {
+        'X-Admin-Token': auth.adminToken,
+        'Content-Type': 'multipart/form-data'
+      }
+    })
+
+    ElMessage.success(t('settings.geoipUploadSuccess'))
+    await loadGeoipStatus()
+  } catch (error: any) {
+    ElMessage.error(t('settings.geoipUploadFailed') + ': ' + (error.response?.data?.message || error.message))
+  } finally {
+    geoipUploading.value = false
+    input.value = ''
+  }
+}
+
+async function deleteGeoip() {
+  try {
+    await axios.delete(`${auth.endpoint}/api/admin/settings/geoip`, {
+      headers: getHeaders()
+    })
+    ElMessage.success(t('settings.geoipDeleteSuccess'))
+    geoipStatus.enabled = false
+  } catch (error: any) {
+    ElMessage.error(t('settings.geoipDeleteFailed') + ': ' + (error.response?.data?.message || error.message))
+  }
+}
+
 onMounted(() => {
   loadSettings()
+  loadGeoipStatus()
 })
 </script>
 
@@ -455,6 +685,16 @@ onMounted(() => {
   width: 100%;
 }
 
+.trusted-proxies-input {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preset-btn {
+  align-self: flex-start;
+}
+
 .action-bar {
   margin-top: 20px;
   display: flex;
@@ -476,5 +716,56 @@ onMounted(() => {
   .settings-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* GeoIP 相关样式 */
+.info-btn {
+  margin-left: auto;
+  padding: 4px;
+}
+
+.geoip-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.download-link {
+  font-size: 12px;
+  color: #e67e22;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.download-link:hover {
+  text-decoration: underline;
+}
+
+.geoip-info-content {
+  color: #666;
+  line-height: 1.8;
+  white-space: pre-line;
+  margin: 0;
+}
+
+.geoip-info-links {
+  display: flex;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.info-link {
+  color: #e67e22;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.info-link:hover {
+  text-decoration: underline;
 }
 </style>
