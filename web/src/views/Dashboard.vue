@@ -214,7 +214,7 @@ import {
   type GeoStatsAggregated,
   type GeoStatsSummary
 } from '../api/admin'
-import * as echarts from 'echarts'
+import echarts, { type ECharts } from '../utils/echarts'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -226,8 +226,8 @@ const recentObjects = ref<RecentObject[]>([])
 
 const bucketChartRef = ref<HTMLElement>()
 const typeChartRef = ref<HTMLElement>()
-let bucketChart: echarts.ECharts | null = null
-let typeChart: echarts.ECharts | null = null
+let bucketChart: ECharts | null = null
+let typeChart: ECharts | null = null
 
 // GeoStats 相关
 const geoStatsEnabled = ref(false)

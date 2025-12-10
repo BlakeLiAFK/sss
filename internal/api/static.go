@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -107,14 +106,15 @@ func (s *Server) serveStaticFile(w http.ResponseWriter, r *http.Request, name st
 		w.Header().Set("Content-Type", "font/ttf")
 	}
 
-	// 如果支持 ReadSeeker，使用 http.ServeContent（支持 Range 请求）
-	if rs, ok := f.(io.ReadSeeker); ok {
-		http.ServeContent(w, r, name, stat.ModTime(), rs)
-		return
+	// 设置缓存头（assets 目录使用强缓存）
+	if strings.HasPrefix(name, "assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "public, max-age=3600")
 	}
 
-	// 否则直接复制内容
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", stat.Size()))
+	// 直接复制内容（让 gzip 中间件处理压缩）
+	// 注意：不设置 Content-Length，让 gzip 中间件或 chunked encoding 处理
 	if _, err := io.Copy(w, f); err != nil {
 		// 客户端可能已断开连接，忽略错误
 		return

@@ -98,9 +98,10 @@ func main() {
 	}
 
 	// 9. 启动 HTTP 服务（带超时设置）
+	// 使用 gzip 中间件包装 server，对文本资源进行压缩
 	httpServer := &http.Server{
 		Addr:         addr,
-		Handler:      server,
+		Handler:      utils.GzipHandler(server),
 		ReadTimeout:  60 * time.Second,
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
