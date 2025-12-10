@@ -99,15 +99,29 @@
               <template #default>
                 <div class="update-details">
                   <p v-if="updateInfo.publishedAt">{{ t('settings.publishedAt') }}: {{ formatDate(updateInfo.publishedAt) }}</p>
-                  <a
-                    v-if="updateInfo.releaseUrl"
-                    :href="updateInfo.releaseUrl"
-                    target="_blank"
-                    class="release-link"
-                  >
-                    {{ t('settings.viewRelease') }}
-                    <el-icon><Link /></el-icon>
-                  </a>
+                  <p v-if="updateInfo.platform" class="platform-info">
+                    {{ t('settings.currentPlatform') }}: {{ updateInfo.platform.os }}/{{ updateInfo.platform.arch }}
+                  </p>
+                  <div class="download-links">
+                    <a
+                      v-if="updateInfo.downloadUrl"
+                      :href="updateInfo.downloadUrl"
+                      target="_blank"
+                      class="download-link"
+                    >
+                      <el-icon><Download /></el-icon>
+                      {{ t('settings.downloadForPlatform', { platform: `${updateInfo.platform?.os}-${updateInfo.platform?.arch}` }) }}
+                    </a>
+                    <a
+                      v-if="updateInfo.releaseUrl"
+                      :href="updateInfo.releaseUrl"
+                      target="_blank"
+                      class="release-link"
+                    >
+                      {{ t('settings.viewRelease') }}
+                      <el-icon><Link /></el-icon>
+                    </a>
+                  </div>
                 </div>
               </template>
             </el-alert>
@@ -431,7 +445,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Monitor, FolderOpened, InfoFilled, Lock, Key, Edit, Check, Location, Upload, Delete, QuestionFilled, Link, CircleCheck, TrendCharts } from '@element-plus/icons-vue'
+import { Monitor, FolderOpened, InfoFilled, Lock, Key, Edit, Check, Location, Upload, Delete, QuestionFilled, Link, CircleCheck, TrendCharts, Download } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { getGeoStatsConfig, updateGeoStatsConfig as apiUpdateGeoStatsConfig, clearGeoStatsData as apiClearGeoStatsData } from '../api/admin'
 import axios from 'axios'
@@ -457,7 +471,9 @@ const updateInfo = reactive({
   latestVersion: '',
   releaseUrl: '',
   releaseNotes: '',
-  publishedAt: ''
+  publishedAt: '',
+  platform: null as { os: string; arch: string } | null,
+  downloadUrl: ''
 })
 
 // 设置数据
@@ -804,6 +820,8 @@ async function checkForUpdate() {
     updateInfo.releaseUrl = response.data.release_url || ''
     updateInfo.releaseNotes = response.data.release_notes || ''
     updateInfo.publishedAt = response.data.published_at || ''
+    updateInfo.platform = response.data.platform || null
+    updateInfo.downloadUrl = response.data.download_url || ''
 
     if (updateInfo.hasUpdate) {
       ElMessage.warning(t('settings.newVersionAvailable', { version: updateInfo.latestVersion }))
@@ -1052,6 +1070,34 @@ onMounted(() => {
   margin: 0 0 8px;
   font-size: 12px;
   color: #666;
+}
+
+.platform-info {
+  color: #909399;
+}
+
+.download-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.download-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: #fff;
+  background-color: #409eff;
+  border-radius: 4px;
+  text-decoration: none;
+  transition: background-color 0.2s;
+}
+
+.download-link:hover {
+  background-color: #66b1ff;
 }
 
 .release-link {

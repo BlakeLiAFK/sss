@@ -699,6 +699,8 @@ add: '添加',
     checkUpdateFailed: '检测更新失败',
     publishedAt: '发布时间',
     viewRelease: '查看发布说明',
+    currentPlatform: '当前平台',
+    downloadForPlatform: '下载 {platform} 版本',
     // GeoStats 设置
     geostatsConfig: '访问来源统计',
     geostatsRequiresGeoip: '需要先启用 GeoIP 数据库才能使用此功能',

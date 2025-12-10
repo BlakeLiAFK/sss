@@ -40,6 +40,9 @@
           <el-icon :size="16"><User /></el-icon>
           <span>Admin</span>
         </div>
+        <div class="language-switcher-wrapper">
+          <LanguageSwitcher size="small" :show-label="true" />
+        </div>
         <button class="logout-btn" @click="handleLogout">
           <el-icon :size="16"><SwitchButton /></el-icon>
           <span>{{ t('layout.logout') }}</span>
@@ -75,6 +78,7 @@ import {
   Folder, Key, Tools, User, SwitchButton, DataAnalysis, List,
   Menu, Close, Box, Setting
 } from '@element-plus/icons-vue'
+import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import axios from 'axios'
 
 const { t } = useI18n()
@@ -248,6 +252,14 @@ async function handleLogout() {
   color: #666;
   font-size: 13px;
   margin-bottom: 8px;
+}
+
+.language-switcher-wrapper {
+  margin-bottom: 8px;
+}
+
+.language-switcher-wrapper :deep(.el-select) {
+  width: 100%;
 }
 
 .logout-btn {

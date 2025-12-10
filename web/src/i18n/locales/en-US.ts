@@ -699,6 +699,8 @@ changeFailed: 'Failed to change',
     checkUpdateFailed: 'Failed to check update',
     publishedAt: 'Published At',
     viewRelease: 'View Release Notes',
+    currentPlatform: 'Current Platform',
+    downloadForPlatform: 'Download for {platform}',
     // GeoStats settings
     geostatsConfig: 'Access Source Statistics',
     geostatsRequiresGeoip: 'GeoIP database must be enabled first to use this feature',
