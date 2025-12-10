@@ -389,13 +389,6 @@ func TestDisabledAPIKey(t *testing.T) {
 
 // createClientWithCredentials 创建带指定凭证的S3客户端
 func createClientWithCredentials(endpoint, accessKey, secretKey string) (*s3.Client, error) {
-	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-		return aws.Endpoint{
-			URL:               endpoint,
-			HostnameImmutable: true,
-		}, nil
-	})
-
 	cfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithRegion("us-east-1"),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
@@ -403,7 +396,6 @@ func createClientWithCredentials(endpoint, accessKey, secretKey string) (*s3.Cli
 			secretKey,
 			"",
 		)),
-		config.WithEndpointResolverWithOptions(customResolver),
 	)
 	if err != nil {
 		return nil, err
@@ -411,5 +403,6 @@ func createClientWithCredentials(endpoint, accessKey, secretKey string) (*s3.Cli
 
 	return s3.NewFromConfig(cfg, func(o *s3.Options) {
 		o.UsePathStyle = true
+		o.BaseEndpoint = aws.String(endpoint)
 	}), nil
 }

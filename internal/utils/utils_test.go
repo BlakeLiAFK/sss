@@ -16,6 +16,11 @@ import (
 
 // TestGetClientIP 测试获取客户端IP
 func TestGetClientIP(t *testing.T) {
+	// 配置信任代理，以便测试代理头部解析
+	// 测试中 RemoteAddr 使用 10.0.0.1，需要信任该网段
+	ReloadTrustedProxies("10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
+	defer ReloadTrustedProxies("") // 测试后清理
+
 	tests := []struct {
 		name       string
 		headers    map[string]string
@@ -851,5 +856,208 @@ func BenchmarkWriteError(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		w := httptest.NewRecorder()
 		WriteError(w, ErrNoSuchBucket, http.StatusNotFound, "/my-bucket")
+	}
+}
+
+// =============================================================================
+// ip.go 额外测试
+// =============================================================================
+
+// TestGetClientIPs 测试获取客户端双IP
+func TestGetClientIPs(t *testing.T) {
+	tests := []struct {
+		name          string
+		remoteAddr    string
+		xForwardedFor string
+		wantDirect    string
+		wantForwarded string
+	}{
+		{
+			name:          "仅直连IP",
+			remoteAddr:    "192.168.1.1:12345",
+			xForwardedFor: "",
+			wantDirect:    "192.168.1.1",
+			wantForwarded: "",
+		},
+		{
+			name:          "有转发IP",
+			remoteAddr:    "10.0.0.1:12345",
+			xForwardedFor: "203.0.113.100",
+			wantDirect:    "10.0.0.1",
+			wantForwarded: "203.0.113.100",
+		},
+		{
+			name:          "多级转发",
+			remoteAddr:    "127.0.0.1:8080",
+			xForwardedFor: "8.8.8.8, 10.0.0.1, 192.168.1.1",
+			wantDirect:    "127.0.0.1",
+			wantForwarded: "8.8.8.8",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = tt.remoteAddr
+			if tt.xForwardedFor != "" {
+				req.Header.Set("X-Forwarded-For", tt.xForwardedFor)
+			}
+
+			directIP, forwardedIP := GetClientIPs(req)
+			if directIP != tt.wantDirect {
+				t.Errorf("directIP = %v, want %v", directIP, tt.wantDirect)
+			}
+			if forwardedIP != tt.wantForwarded {
+				t.Errorf("forwardedIP = %v, want %v", forwardedIP, tt.wantForwarded)
+			}
+		})
+	}
+}
+
+// TestGetCloudflareIPRangesString 测试获取Cloudflare IP范围字符串
+func TestGetCloudflareIPRangesString(t *testing.T) {
+	result := GetCloudflareIPRangesString()
+
+	// 检查不为空
+	if result == "" {
+		t.Error("GetCloudflareIPRangesString() 返回空字符串")
+	}
+
+	// 检查包含一些已知的 Cloudflare IP 范围
+	expectedRanges := []string{"173.245.48.0/20", "103.21.244.0/22", "104.16.0.0/13"}
+	for _, expectedRange := range expectedRanges {
+		if !strings.Contains(result, expectedRange) {
+			t.Errorf("结果不包含预期的 Cloudflare IP 范围: %s", expectedRange)
+		}
+	}
+
+	// 检查是逗号分隔的格式
+	parts := strings.Split(result, ",")
+	if len(parts) < 10 {
+		t.Errorf("期望至少 10 个 IP 范围，实际有 %d 个", len(parts))
+	}
+}
+
+// =============================================================================
+// geoip.go 测试
+// =============================================================================
+
+// TestGeoIPServiceSingleton 测试 GeoIP 服务单例
+func TestGeoIPServiceSingleton(t *testing.T) {
+	service1 := GetGeoIPService()
+	service2 := GetGeoIPService()
+
+	if service1 != service2 {
+		t.Error("GetGeoIPService() 应该返回同一个实例")
+	}
+}
+
+// TestGeoIPServiceNotLoaded 测试未加载时的行为
+func TestGeoIPServiceNotLoaded(t *testing.T) {
+	service := GetGeoIPService()
+
+	// 未加载数据库时应返回 false
+	if service.IsEnabled() {
+		t.Log("数据库已加载，跳过未加载测试")
+		return
+	}
+
+	// Lookup 应返回 nil
+	info := service.Lookup("8.8.8.8")
+	if info != nil {
+		t.Error("未加载数据库时 Lookup 应返回 nil")
+	}
+
+	// LookupString 应返回空字符串
+	str := service.LookupString("8.8.8.8")
+	if str != "" {
+		t.Errorf("未加载数据库时 LookupString 应返回空字符串，实际: %s", str)
+	}
+}
+
+// TestGetDefaultGeoIPPath 测试默认 GeoIP 路径
+func TestGetDefaultGeoIPPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		dbPath   string
+		expected string
+	}{
+		{
+			name:     "标准路径",
+			dbPath:   "./data/metadata.db",
+			expected: "data/GeoIP.mmdb",
+		},
+		{
+			name:     "绝对路径",
+			dbPath:   "/var/sss/data/metadata.db",
+			expected: "/var/sss/data/GeoIP.mmdb",
+		},
+		{
+			name:     "当前目录",
+			dbPath:   "metadata.db",
+			expected: "GeoIP.mmdb",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := GetDefaultGeoIPPath(tt.dbPath)
+
+			if !strings.HasSuffix(path, "GeoIP.mmdb") {
+				t.Errorf("路径应以 GeoIP.mmdb 结尾，实际: %s", path)
+			}
+		})
+	}
+}
+
+// TestGeoIPLoadNonExistent 测试加载不存在的文件
+func TestGeoIPLoadNonExistent(t *testing.T) {
+	service := GetGeoIPService()
+
+	// 加载不存在的文件不会返回错误，但会禁用服务
+	err := service.Load("/non/existent/path.mmdb")
+	if err != nil {
+		t.Errorf("加载不存在的文件不应返回错误，实际: %v", err)
+	}
+
+	// 服务应该被禁用
+	if service.IsEnabled() {
+		t.Error("加载不存在的文件后服务应该被禁用")
+	}
+}
+
+// TestInitGeoIPWithNonExistent 测试使用不存在路径初始化
+func TestInitGeoIPWithNonExistent(t *testing.T) {
+	// InitGeoIP 不应 panic，即使路径不存在
+	InitGeoIP("/non/existent/path.mmdb")
+
+	// 服务应该存在但未启用
+	service := GetGeoIPService()
+	if service.IsEnabled() {
+		t.Error("使用不存在路径初始化后不应启用")
+	}
+}
+
+// TestGeoIPReload 测试重新加载
+func TestGeoIPReload(t *testing.T) {
+	service := GetGeoIPService()
+
+	// Reload 应该不报错（即使没有之前加载过）
+	err := service.Reload()
+	if err != nil {
+		t.Errorf("Reload 不应返回错误，实际: %v", err)
+	}
+}
+
+// TestGeoIPClose 测试关闭服务
+func TestGeoIPClose(t *testing.T) {
+	service := GetGeoIPService()
+
+	// Close 应该不 panic
+	service.Close()
+
+	// 关闭后应该被禁用
+	if service.IsEnabled() {
+		t.Error("Close 后服务应该被禁用")
 	}
 }

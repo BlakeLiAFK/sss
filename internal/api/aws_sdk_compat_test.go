@@ -83,13 +83,6 @@ func setupAWSSDKTest(t *testing.T) (*httptest.Server, func()) {
 
 // createS3Client 创建S3客户端
 func createS3Client(endpoint string) (*s3.Client, error) {
-	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-		return aws.Endpoint{
-			URL:               endpoint,
-			HostnameImmutable: true,
-		}, nil
-	})
-
 	cfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithRegion(testRegion),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
@@ -97,7 +90,6 @@ func createS3Client(endpoint string) (*s3.Client, error) {
 			testSecretKey,
 			"",
 		)),
-		config.WithEndpointResolverWithOptions(customResolver),
 	)
 	if err != nil {
 		return nil, err
@@ -105,6 +97,7 @@ func createS3Client(endpoint string) (*s3.Client, error) {
 
 	return s3.NewFromConfig(cfg, func(o *s3.Options) {
 		o.UsePathStyle = true // 使用路径风格URL
+		o.BaseEndpoint = aws.String(endpoint)
 	}), nil
 }
 

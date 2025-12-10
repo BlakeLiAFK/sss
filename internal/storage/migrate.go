@@ -317,21 +317,10 @@ func (m *MigrateManager) createS3Client(ctx context.Context, cfg MigrateConfig) 
 		"",
 	)
 
-	// 创建自定义端点解析器
-	customResolver := aws.EndpointResolverWithOptionsFunc(
-		func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-			return aws.Endpoint{
-				URL:               cfg.SourceEndpoint,
-				HostnameImmutable: true,
-			}, nil
-		},
-	)
-
 	// 加载配置
 	awsCfg, err := config.LoadDefaultConfig(ctx,
 		config.WithRegion(cfg.SourceRegion),
 		config.WithCredentialsProvider(creds),
-		config.WithEndpointResolverWithOptions(customResolver),
 	)
 	if err != nil {
 		return nil, err
@@ -340,6 +329,7 @@ func (m *MigrateManager) createS3Client(ctx context.Context, cfg MigrateConfig) 
 	// 创建 S3 客户端，使用 path-style（兼容大多数 S3 兼容服务）
 	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
 		o.UsePathStyle = true
+		o.BaseEndpoint = aws.String(cfg.SourceEndpoint)
 	})
 
 	return client, nil

@@ -73,7 +73,6 @@ func (s *Server) serveStaticFile(w http.ResponseWriter, r *http.Request, name st
 		}
 		defer f2.Close()
 		f = f2
-		stat, _ = f2.Stat()
 		name = indexPath
 	}
 

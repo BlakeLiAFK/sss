@@ -62,17 +62,6 @@ const (
 	SettingGeoStatsRetentionDays = "geo_stats.retention_days" // 数据保留天数
 )
 
-// initSettingsTable 初始化系统配置表
-func (m *MetadataStore) initSettingsTable() error {
-	schema := `CREATE TABLE IF NOT EXISTS system_settings (
-		key TEXT PRIMARY KEY,
-		value TEXT NOT NULL,
-		updated_at DATETIME NOT NULL
-	)`
-	_, err := m.db.Exec(schema)
-	return err
-}
-
 // GetSetting 获取配置项
 func (m *MetadataStore) GetSetting(key string) (string, error) {
 	var value string
@@ -208,8 +197,27 @@ func (m *MetadataStore) GetAdminUsername() string {
 	return username
 }
 
+// InitDefaultSettingsResult 初始化默认设置的返回值
+type InitDefaultSettingsResult struct {
+	AccessKeyID     string
+	SecretAccessKey string
+}
+
 // InitDefaultSettings 初始化默认配置（安装时调用）
+// 返回生成的第一个 API Key，用于用户首次使用
 func (m *MetadataStore) InitDefaultSettings(adminUsername, adminPassword string) error {
+	result, err := m.InitDefaultSettingsWithResult(adminUsername, adminPassword)
+	if err != nil {
+		return err
+	}
+	// 兼容旧版：存储到系统配置中
+	m.SetSetting(SettingAuthAccessKeyID, result.AccessKeyID)
+	m.SetSetting(SettingAuthSecretAccessKey, result.SecretAccessKey)
+	return nil
+}
+
+// InitDefaultSettingsWithResult 初始化默认配置并返回结果
+func (m *MetadataStore) InitDefaultSettingsWithResult(adminUsername, adminPassword string) (*InitDefaultSettingsResult, error) {
 	// 服务器配置
 	defaults := map[string]string{
 		SettingServerHost:           "0.0.0.0",
@@ -224,16 +232,35 @@ func (m *MetadataStore) InitDefaultSettings(adminUsername, adminPassword string)
 
 	for key, value := range defaults {
 		if err := m.SetSetting(key, value); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	// 设置密码（bcrypt 哈希）
 	if err := m.SetAdminPassword(adminPassword); err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	// 创建第一个 API Key（带全部权限）
+	apiKey, err := m.CreateAPIKey("系统默认 API Key")
+	if err != nil {
+		return nil, err
+	}
+
+	// 设置全局权限（所有桶读写）
+	if err := m.SetAPIKeyPermission(&APIKeyPermission{
+		AccessKeyID: apiKey.AccessKeyID,
+		BucketName:  "*",
+		CanRead:     true,
+		CanWrite:    true,
+	}); err != nil {
+		return nil, err
+	}
+
+	return &InitDefaultSettingsResult{
+		AccessKeyID:     apiKey.AccessKeyID,
+		SecretAccessKey: apiKey.SecretAccessKey,
+	}, nil
 }
 
 // GetServerConfig 获取服务器配置

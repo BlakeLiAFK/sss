@@ -123,11 +123,6 @@ func getSecretKey(accessKeyID string) string {
 	return ""
 }
 
-// calculateSignature 计算请求签名（使用配置中的密钥，兼容旧代码）
-func calculateSignature(r *http.Request, dateStr, region, signedHeaders string) string {
-	return calculateSignatureWithSecret(r, dateStr, region, signedHeaders, config.Global.Auth.SecretAccessKey)
-}
-
 // calculateSignatureWithSecret 使用指定密钥计算请求签名
 func calculateSignatureWithSecret(r *http.Request, dateStr, region, signedHeaders, secretKey string) string {
 	// 获取请求时间

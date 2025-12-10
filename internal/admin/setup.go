@@ -140,12 +140,17 @@ func (h *Handler) handleInstall(w http.ResponseWriter, r *http.Request) {
 		req.StorageDataPath = "./data/buckets"
 	}
 
-	// 初始化配置
-	if err := h.metadata.InitDefaultSettings(req.AdminUsername, req.AdminPassword); err != nil {
+	// 初始化配置（返回生成的 API Key）
+	result, err := h.metadata.InitDefaultSettingsWithResult(req.AdminUsername, req.AdminPassword)
+	if err != nil {
 		utils.Error("初始化配置失败", "error", err)
 		utils.WriteErrorResponse(w, "InternalError", "初始化配置失败", http.StatusInternalServerError)
 		return
 	}
+
+	// 存储 API Key 到配置（兼容旧版）
+	h.metadata.SetSetting(storage.SettingAuthAccessKeyID, result.AccessKeyID)
+	h.metadata.SetSetting(storage.SettingAuthSecretAccessKey, result.SecretAccessKey)
 
 	// 设置自定义配置
 	h.metadata.SetSetting(storage.SettingServerHost, req.ServerHost)
@@ -170,8 +175,10 @@ func (h *Handler) handleInstall(w http.ResponseWriter, r *http.Request) {
 	})
 
 	utils.WriteJSONResponse(w, SetupResponse{
-		Success: true,
-		Message: "安装成功",
+		Success:         true,
+		Message:         "安装成功",
+		AccessKeyID:     result.AccessKeyID,
+		SecretAccessKey: result.SecretAccessKey,
 	})
 }
 
