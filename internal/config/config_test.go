@@ -434,8 +434,8 @@ func TestVersion(t *testing.T) {
 		t.Error("Version 不应为空")
 	}
 
-	// 验证版本号格式（简单检查）
-	if len(Version) < 5 {
+	// 验证版本号格式（允许开发版本 "dev" 或正式版本 "x.y.z"）
+	if Version != "dev" && len(Version) < 5 {
 		t.Errorf("Version 格式可能不正确: %s", Version)
 	}
 }

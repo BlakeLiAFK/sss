@@ -86,6 +86,11 @@ func (m *MetadataStore) initTables() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_objects_bucket ON objects(bucket)`,
 		`CREATE INDEX IF NOT EXISTS idx_objects_prefix ON objects(bucket, key)`,
+		// 优化 last_modified 排序查询（Dashboard 最近文件）
+		`CREATE INDEX IF NOT EXISTS idx_objects_last_modified ON objects(last_modified DESC)`,
+		// 优化 multipart_uploads 查询
+		`CREATE INDEX IF NOT EXISTS idx_multipart_bucket ON multipart_uploads(bucket)`,
+		`CREATE INDEX IF NOT EXISTS idx_multipart_initiated ON multipart_uploads(initiated)`,
 		// API Keys 表
 		`CREATE TABLE IF NOT EXISTS api_keys (
 			access_key_id TEXT PRIMARY KEY,

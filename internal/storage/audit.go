@@ -80,10 +80,13 @@ func (m *MetadataStore) initAuditTable() error {
 
 	// 创建索引
 	indexes := []string{
-		`CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs(actor)`,
 		`CREATE INDEX IF NOT EXISTS idx_audit_ip ON audit_logs(ip)`,
+		// 复合索引：优化带筛选的分页查询
+		`CREATE INDEX IF NOT EXISTS idx_audit_timestamp_action ON audit_logs(timestamp DESC, action)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_success ON audit_logs(success)`,
 	}
 	for _, idx := range indexes {
 		if _, err := m.db.Exec(idx); err != nil {
