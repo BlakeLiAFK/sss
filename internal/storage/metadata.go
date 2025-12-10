@@ -141,6 +141,11 @@ func (m *MetadataStore) initTables() error {
 		return fmt.Errorf("init audit table failed: %v", err)
 	}
 
+	// 初始化 GeoStats 表
+	if err := m.initGeoStatsTable(); err != nil {
+		return fmt.Errorf("init geo_stats table failed: %v", err)
+	}
+
 	return nil
 }
 

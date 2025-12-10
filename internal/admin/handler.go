@@ -85,6 +85,14 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		h.handleChangePassword(w, r)
 	case path == "settings/geoip":
 		h.handleGeoIP(w, r)
+	case path == "settings/check-update":
+		h.handleCheckUpdate(w, r)
+	case path == "geo-stats/config":
+		h.handleGeoStatsConfig(w, r)
+	case path == "geo-stats/data":
+		h.handleGeoStatsData(w, r)
+	case path == "geo-stats/summary":
+		h.handleGeoStatsSummary(w, r)
 	default:
 		utils.WriteErrorResponse(w, "NotFound", "API endpoint not found", http.StatusNotFound)
 	}

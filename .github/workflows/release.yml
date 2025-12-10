@@ -71,11 +71,20 @@ jobs:
           CGO_ENABLED: 0  # 禁用 CGO，使用纯 Go SQLite
         run: |
           VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#v}"  # 去掉 v 前缀
+          GIT_COMMIT="${{ github.sha }}"
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           OUTPUT_NAME="sss-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
 
           echo "Building for $GOOS/$GOARCH"
+          echo "Version: ${VERSION}, Commit: ${GIT_COMMIT:0:7}, BuildTime: ${BUILD_TIME}"
 
-          go build -tags embed -ldflags="-s -w -X main.Version=${VERSION}" -o ${OUTPUT_NAME} ./cmd/server
+          LDFLAGS="-s -w"
+          LDFLAGS="${LDFLAGS} -X sss/internal/config.Version=${VERSION}"
+          LDFLAGS="${LDFLAGS} -X sss/internal/config.GitCommit=${GIT_COMMIT}"
+          LDFLAGS="${LDFLAGS} -X sss/internal/config.BuildTime=${BUILD_TIME}"
+
+          go build -tags embed -ldflags="${LDFLAGS}" -o ${OUTPUT_NAME} ./cmd/server
           echo "Built ${OUTPUT_NAME}"
 
       - name: Compress Binary (Unix)

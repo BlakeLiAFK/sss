@@ -10,7 +10,17 @@ type Config struct {
 	Storage  StorageConfig
 	Auth     AuthConfig
 	Security SecurityConfig
+	GeoStats GeoStatsConfig
 	Log      LogConfig
+}
+
+// GeoStatsConfig 地理位置统计配置
+type GeoStatsConfig struct {
+	Enabled       bool   // 是否启用
+	Mode          string // 写入模式: realtime/batch
+	BatchSize     int    // 批量模式缓存大小
+	FlushInterval int    // 批量模式刷新间隔（秒）
+	RetentionDays int    // 数据保留天数
 }
 
 // SecurityConfig 安全配置
@@ -73,6 +83,13 @@ func NewDefault() *Config {
 			PresignScheme:  "http", // 默认 HTTP
 			TrustedProxies: "",     // 默认不信任任何代理
 		},
+		GeoStats: GeoStatsConfig{
+			Enabled:       false,     // 默认关闭
+			Mode:          "realtime", // 默认实时模式
+			BatchSize:     100,       // 默认缓存大小
+			FlushInterval: 60,        // 默认刷新间隔 60 秒
+			RetentionDays: 90,        // 默认保留 90 天
+		},
 		Log: LogConfig{
 			Level: "info",
 		},
@@ -134,6 +151,29 @@ func LoadFromDB(loader SettingsLoader) {
 		if accessKeyID != "" {
 			Global.Auth.AccessKeyID = accessKeyID
 			Global.Auth.SecretAccessKey = secretAccessKey
+		}
+
+		// GeoStats 配置
+		if enabled, err := loader.GetSetting("geo_stats.enabled"); err == nil && enabled == "true" {
+			Global.GeoStats.Enabled = true
+		}
+		if mode, err := loader.GetSetting("geo_stats.mode"); err == nil && mode != "" {
+			Global.GeoStats.Mode = mode
+		}
+		if batchSize, err := loader.GetSetting("geo_stats.batch_size"); err == nil && batchSize != "" {
+			if size, err := strconv.Atoi(batchSize); err == nil && size > 0 {
+				Global.GeoStats.BatchSize = size
+			}
+		}
+		if flushInterval, err := loader.GetSetting("geo_stats.flush_interval"); err == nil && flushInterval != "" {
+			if interval, err := strconv.Atoi(flushInterval); err == nil && interval > 0 {
+				Global.GeoStats.FlushInterval = interval
+			}
+		}
+		if retentionDays, err := loader.GetSetting("geo_stats.retention_days"); err == nil && retentionDays != "" {
+			if days, err := strconv.Atoi(retentionDays); err == nil && days > 0 {
+				Global.GeoStats.RetentionDays = days
+			}
 		}
 	}
 }

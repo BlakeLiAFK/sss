@@ -53,6 +53,13 @@ const (
 	// 旧版兼容配置（API Key）
 	SettingAuthAccessKeyID     = "auth.access_key_id"
 	SettingAuthSecretAccessKey = "auth.secret_access_key"
+
+	// GeoStats 配置
+	SettingGeoStatsEnabled       = "geo_stats.enabled"        // 是否启用，"true" 或 "false"
+	SettingGeoStatsMode          = "geo_stats.mode"           // 写入模式，"realtime" 或 "batch"
+	SettingGeoStatsBatchSize     = "geo_stats.batch_size"     // 批量模式缓存大小
+	SettingGeoStatsFlushInterval = "geo_stats.flush_interval" // 批量模式刷新间隔（秒）
+	SettingGeoStatsRetentionDays = "geo_stats.retention_days" // 数据保留天数
 )
 
 // initSettingsTable 初始化系统配置表

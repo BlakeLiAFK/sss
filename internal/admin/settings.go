@@ -49,6 +49,8 @@ type SystemInfo struct {
 	Installed   bool   `json:"installed"`
 	InstalledAt string `json:"installed_at"`
 	Version     string `json:"version"`
+	GitCommit   string `json:"git_commit,omitempty"`
+	BuildTime   string `json:"build_time,omitempty"`
 }
 
 // handleSettings 处理系统设置 API
@@ -104,7 +106,9 @@ func (h *Handler) getSettings(w http.ResponseWriter, r *http.Request) {
 		System: SystemInfo{
 			Installed:   h.metadata.IsInstalled(),
 			InstalledAt: installedAt,
-			Version:     config.Version, // 直接使用编译时常量，而非数据库存储
+			Version:     config.Version,
+			GitCommit:   config.GitCommit,
+			BuildTime:   config.BuildTime,
 		},
 	}
 
@@ -281,7 +285,7 @@ func (h *Handler) getGeoIPStatus(w http.ResponseWriter, r *http.Request) {
 	geoIP := utils.GetGeoIPService()
 	resp := GeoIPStatusResponse{
 		Enabled: geoIP.IsEnabled(),
-		Path:    utils.GetDefaultGeoIPPath(config.Global.Storage.DataPath),
+		Path:    utils.GetDefaultGeoIPPath(config.Global.Storage.DBPath),
 	}
 	utils.WriteJSONResponse(w, resp)
 }
@@ -311,7 +315,7 @@ func (h *Handler) uploadGeoIP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 确保目录存在
-	geoIPPath := utils.GetDefaultGeoIPPath(config.Global.Storage.DataPath)
+	geoIPPath := utils.GetDefaultGeoIPPath(config.Global.Storage.DBPath)
 	geoIPDir := filepath.Dir(geoIPPath)
 	if err := os.MkdirAll(geoIPDir, 0755); err != nil {
 		utils.WriteErrorResponse(w, "InternalError", "创建目录失败", http.StatusInternalServerError)
@@ -364,7 +368,7 @@ func (h *Handler) uploadGeoIP(w http.ResponseWriter, r *http.Request) {
 
 // deleteGeoIP 删除 GeoIP 数据库
 func (h *Handler) deleteGeoIP(w http.ResponseWriter, r *http.Request) {
-	geoIPPath := utils.GetDefaultGeoIPPath(config.Global.Storage.DataPath)
+	geoIPPath := utils.GetDefaultGeoIPPath(config.Global.Storage.DBPath)
 
 	// 关闭并禁用 GeoIP 服务
 	geoIP := utils.GetGeoIPService()
@@ -383,4 +387,20 @@ func (h *Handler) deleteGeoIP(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"message": "GeoIP 数据库已删除",
 	})
+}
+
+// handleCheckUpdate 检查版本更新
+func (h *Handler) handleCheckUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		return
+	}
+
+	result, err := utils.CheckForUpdate()
+	if err != nil {
+		utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	utils.WriteJSONResponse(w, result)
 }

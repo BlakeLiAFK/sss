@@ -188,12 +188,17 @@ func (s *GeoIPService) LookupString(ipStr string) string {
 }
 
 // GetDefaultGeoIPPath 获取默认的 GeoIP 数据库路径
-func GetDefaultGeoIPPath(dataPath string) string {
-	return filepath.Join(dataPath, "geoip", "GeoIP.mmdb")
+// 参数 dbPath 是数据库文件路径（如 ./data/metadata.db）
+// GeoIP 数据库将存放在数据库同级目录下（如 ./data/GeoIP.mmdb）
+func GetDefaultGeoIPPath(dbPath string) string {
+	// 获取数据库所在目录（如 ./data）
+	dataDir := filepath.Dir(dbPath)
+	return filepath.Join(dataDir, "GeoIP.mmdb")
 }
 
 // InitGeoIP 初始化 GeoIP 服务
-func InitGeoIP(dataPath string) {
-	dbPath := GetDefaultGeoIPPath(dataPath)
-	GetGeoIPService().Load(dbPath)
+// 参数 dbPath 是数据库文件路径（如 ./data/metadata.db）
+func InitGeoIP(dbPath string) {
+	geoIPPath := GetDefaultGeoIPPath(dbPath)
+	GetGeoIPService().Load(geoIPPath)
 }

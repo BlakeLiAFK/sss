@@ -72,7 +72,57 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	utils.Info("request", "method", r.Method, "path", r.URL.Path, "query", r.URL.RawQuery)
 
+	// 记录 GeoStats（仅对 S3 API 请求，排除静态资源和管理 API）
+	s.recordGeoStats(r)
+
 	s.mux.ServeHTTP(w, r)
+}
+
+// recordGeoStats 记录地理位置统计
+func (s *Server) recordGeoStats(r *http.Request) {
+	// 检查是否应该记录这个请求
+	path := r.URL.Path
+
+	// 排除静态资源和管理 API
+	if strings.HasPrefix(path, "/assets/") ||
+		strings.HasPrefix(path, "/admin") ||
+		strings.HasPrefix(path, "/api/admin/") ||
+		strings.HasPrefix(path, "/api/setup") ||
+		strings.HasPrefix(path, "/api/health") ||
+		isRootStaticFile(path) {
+		return
+	}
+
+	// 获取 GeoStats 服务
+	geoStatsService := storage.GetGeoStatsService()
+	if !geoStatsService.IsEnabled() {
+		return
+	}
+
+	// 获取客户端 IP
+	clientIP := utils.GetClientIP(r)
+	if clientIP == "" {
+		return
+	}
+
+	// 查询 GeoIP 信息
+	geoIPService := utils.GetGeoIPService()
+	if !geoIPService.IsEnabled() {
+		return
+	}
+
+	geoResult := geoIPService.Lookup(clientIP)
+	if geoResult == nil {
+		return
+	}
+
+	// 记录统计
+	geoStatsService.Record(
+		geoResult.CountryCode,
+		geoResult.Country,
+		geoResult.City,
+		geoResult.Region,
+	)
 }
 
 // isRootStaticFile 检查是否是根目录静态文件（仅限根目录下的文件，不包括子路径）

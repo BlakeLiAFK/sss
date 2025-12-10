@@ -159,7 +159,18 @@ pleaseConfirmPassword: '请确认您的密码'
     file: '文件',
     size: '大小',
     time: '时间',
-    loadStatsFailed: '加载统计失败'
+    loadStatsFailed: '加载统计失败',
+    // 访问来源地图
+    accessSourceMap: '访问来源分布',
+    last7Days: '近 7 天',
+    last30Days: '近 30 天',
+    last90Days: '近 90 天',
+    totalRequests: '总请求数',
+    countryCount: '国家/地区',
+    cityCount: '城市数',
+    noGeoStatsData: '暂无访问来源数据',
+    topCountries: '访问来源排行',
+    requests: '次请求'
   },
 
   // 存储桶
@@ -679,7 +690,38 @@ add: '添加',
     geoipDownloadHint: '获取数据库',
     geoipInfoTitle: '关于 GeoIP 数据库',
     geoipInfoContent: 'GeoIP 数据库用于将 IP 地址解析为地理位置信息。支持 MaxMind 的 GeoIP2 和 GeoLite2 City 数据库（.mmdb 格式）。\n\n推荐使用免费的 GeoLite2 City 数据库，需要在 MaxMind 网站注册账号后下载。',
-    geoipSelectFile: '选择 .mmdb 文件'
+    geoipSelectFile: '选择 .mmdb 文件',
+    // 版本检测
+    checkUpdate: '检测更新',
+    checking: '检测中...',
+    newVersionAvailable: '发现新版本 v{version}',
+    alreadyLatest: '已是最新版本',
+    checkUpdateFailed: '检测更新失败',
+    publishedAt: '发布时间',
+    viewRelease: '查看发布说明',
+    // GeoStats 设置
+    geostatsConfig: '访问来源统计',
+    geostatsRequiresGeoip: '需要先启用 GeoIP 数据库才能使用此功能',
+    geostatsEnabled: '启用统计',
+    geostatsEnabledHint: '记录每次访问的地理位置信息用于统计分析',
+    geostatsEnableSuccess: '访问来源统计已启用',
+    geostatsDisableSuccess: '访问来源统计已禁用',
+    geostatsUpdateFailed: '更新配置失败',
+    geostatsMode: '写入模式',
+    geostatsModeRealtime: '实时写入',
+    geostatsModeBatch: '批量写入',
+    geostatsModeHint: '实时模式即时入库，批量模式在内存缓冲后定期写入以提高性能',
+    geostatsBatchSize: '批量缓存大小',
+    geostatsBatchSizeHint: '内存中缓存的记录数，达到后自动写入数据库',
+    geostatsFlushInterval: '刷新间隔（秒）',
+    geostatsFlushIntervalHint: '定时将缓存写入数据库的时间间隔',
+    geostatsRetentionDays: '数据保留天数',
+    geostatsRetentionDaysHint: '超过该天数的历史数据将被自动清理',
+    geostatsConfigSaved: '配置已保存',
+    geostatsClearData: '清空所有数据',
+    geostatsClearConfirm: '确定要清空所有访问来源统计数据吗？此操作不可撤销。',
+    geostatsClearSuccess: '数据已清空',
+    geostatsClearFailed: '清空数据失败'
   },
 
   // 语言切换

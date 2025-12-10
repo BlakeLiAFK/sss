@@ -75,7 +75,48 @@
         <div class="card-body">
           <div class="info-item">
             <span class="info-label">{{ t('settings.version') }}</span>
-            <span class="info-value">{{ settings.system.version || '-' }}</span>
+            <div class="version-info">
+              <span class="info-value">{{ settings.system.version || '-' }}</span>
+              <el-button
+                link
+                type="primary"
+                @click="checkForUpdate"
+                :loading="checkingUpdate"
+                class="check-update-btn"
+              >
+                {{ checkingUpdate ? t('settings.checking') : t('settings.checkUpdate') }}
+              </el-button>
+            </div>
+          </div>
+          <!-- 版本更新提示 -->
+          <div v-if="updateInfo.hasUpdate" class="update-alert">
+            <el-alert
+              :title="t('settings.newVersionAvailable', { version: updateInfo.latestVersion })"
+              type="warning"
+              :closable="false"
+              show-icon
+            >
+              <template #default>
+                <div class="update-details">
+                  <p v-if="updateInfo.publishedAt">{{ t('settings.publishedAt') }}: {{ formatDate(updateInfo.publishedAt) }}</p>
+                  <a
+                    v-if="updateInfo.releaseUrl"
+                    :href="updateInfo.releaseUrl"
+                    target="_blank"
+                    class="release-link"
+                  >
+                    {{ t('settings.viewRelease') }}
+                    <el-icon><Link /></el-icon>
+                  </a>
+                </div>
+              </template>
+            </el-alert>
+          </div>
+          <div v-else-if="updateInfo.checked && !updateInfo.hasUpdate" class="update-status">
+            <el-tag type="success" size="small">
+              <el-icon><CircleCheck /></el-icon>
+              {{ t('settings.alreadyLatest') }}
+            </el-tag>
           </div>
           <div class="info-item">
             <span class="info-label">{{ t('settings.installedAt') }}</span>
@@ -166,6 +207,112 @@
               <el-icon><el-icon-link /></el-icon>
             </a>
           </div>
+        </div>
+      </div>
+
+      <!-- GeoStats 配置 -->
+      <div class="settings-card">
+        <div class="card-header">
+          <el-icon class="card-icon"><TrendCharts /></el-icon>
+          <h3>{{ t('settings.geostatsConfig') }}</h3>
+        </div>
+        <div class="card-body">
+          <!-- 依赖 GeoIP 提示 -->
+          <el-alert
+            v-if="!geoipStatus.enabled"
+            type="warning"
+            :closable="false"
+            show-icon
+            class="dependency-alert"
+          >
+            {{ t('settings.geostatsRequiresGeoip') }}
+          </el-alert>
+
+          <template v-else>
+            <!-- 启用开关 -->
+            <div class="setting-item">
+              <div class="switch-row">
+                <label>{{ t('settings.geostatsEnabled') }}</label>
+                <el-switch
+                  v-model="geoStatsConfig.enabled"
+                  @change="handleGeoStatsToggle"
+                  :loading="geoStatsUpdating"
+                />
+              </div>
+              <span class="setting-hint">{{ t('settings.geostatsEnabledHint') }}</span>
+            </div>
+
+            <!-- 详细配置 -->
+            <template v-if="geoStatsConfig.enabled">
+              <div class="setting-item">
+                <label>{{ t('settings.geostatsMode') }}</label>
+                <el-select v-model="geoStatsConfig.mode" style="width: 100%" @change="updateGeoStatsConfig">
+                  <el-option :label="t('settings.geostatsModeRealtime')" value="realtime" />
+                  <el-option :label="t('settings.geostatsModeBatch')" value="batch" />
+                </el-select>
+                <span class="setting-hint">{{ t('settings.geostatsModeHint') }}</span>
+              </div>
+
+              <!-- 批量模式配置 -->
+              <template v-if="geoStatsConfig.mode === 'batch'">
+                <div class="setting-item">
+                  <label>{{ t('settings.geostatsBatchSize') }}</label>
+                  <el-input-number
+                    v-model="geoStatsConfig.batch_size"
+                    :min="10"
+                    :max="1000"
+                    :step="10"
+                    style="width: 100%"
+                    @change="updateGeoStatsConfig"
+                  />
+                  <span class="setting-hint">{{ t('settings.geostatsBatchSizeHint') }}</span>
+                </div>
+
+                <div class="setting-item">
+                  <label>{{ t('settings.geostatsFlushInterval') }}</label>
+                  <el-input-number
+                    v-model="geoStatsConfig.flush_interval"
+                    :min="10"
+                    :max="600"
+                    :step="10"
+                    style="width: 100%"
+                    @change="updateGeoStatsConfig"
+                  />
+                  <span class="setting-hint">{{ t('settings.geostatsFlushIntervalHint') }}</span>
+                </div>
+              </template>
+
+              <div class="setting-item">
+                <label>{{ t('settings.geostatsRetentionDays') }}</label>
+                <el-input-number
+                  v-model="geoStatsConfig.retention_days"
+                  :min="7"
+                  :max="365"
+                  :step="7"
+                  style="width: 100%"
+                  @change="updateGeoStatsConfig"
+                />
+                <span class="setting-hint">{{ t('settings.geostatsRetentionDaysHint') }}</span>
+              </div>
+
+              <!-- 数据管理 -->
+              <div class="setting-item" style="margin-top: 16px;">
+                <el-popconfirm
+                  :title="t('settings.geostatsClearConfirm')"
+                  :confirm-button-text="t('common.confirm')"
+                  :cancel-button-text="t('common.cancel')"
+                  @confirm="clearGeoStatsData"
+                >
+                  <template #reference>
+                    <el-button type="danger" plain :loading="geoStatsClearing">
+                      <el-icon><Delete /></el-icon>
+                      {{ t('settings.geostatsClearData') }}
+                    </el-button>
+                  </template>
+                </el-popconfirm>
+              </div>
+            </template>
+          </template>
         </div>
       </div>
 
@@ -284,8 +431,9 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Monitor, FolderOpened, InfoFilled, Lock, Key, Edit, Check, Location, Upload, Delete, QuestionFilled } from '@element-plus/icons-vue'
+import { Monitor, FolderOpened, InfoFilled, Lock, Key, Edit, Check, Location, Upload, Delete, QuestionFilled, Link, CircleCheck, TrendCharts } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
+import { getGeoStatsConfig, updateGeoStatsConfig as apiUpdateGeoStatsConfig, clearGeoStatsData as apiClearGeoStatsData } from '../api/admin'
 import axios from 'axios'
 
 const { t } = useI18n()
@@ -300,6 +448,17 @@ const changingPassword = ref(false)
 const geoipUploading = ref(false)
 const showGeoipInfo = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const checkingUpdate = ref(false)
+
+// 版本更新信息
+const updateInfo = reactive({
+  checked: false,
+  hasUpdate: false,
+  latestVersion: '',
+  releaseUrl: '',
+  releaseNotes: '',
+  publishedAt: ''
+})
 
 // 设置数据
 const settings = reactive({
@@ -331,6 +490,18 @@ const geoipStatus = reactive({
   enabled: false,
   path: ''
 })
+
+// GeoStats 配置
+const geoStatsConfig = reactive({
+  enabled: false,
+  mode: 'realtime',
+  batch_size: 100,
+  flush_interval: 60,
+  retention_days: 90,
+  geoip_enabled: false
+})
+const geoStatsUpdating = ref(false)
+const geoStatsClearing = ref(false)
 
 // 原始设置备份
 const originalSettings = ref<typeof settings | null>(null)
@@ -558,14 +729,98 @@ async function deleteGeoip() {
     })
     ElMessage.success(t('settings.geoipDeleteSuccess'))
     geoipStatus.enabled = false
+    // GeoIP 被删除后，GeoStats 也应该禁用
+    geoStatsConfig.enabled = false
   } catch (error: any) {
     ElMessage.error(t('settings.geoipDeleteFailed') + ': ' + (error.response?.data?.message || error.message))
+  }
+}
+
+// GeoStats 相关函数
+async function loadGeoStatsConfig() {
+  try {
+    const config = await getGeoStatsConfig()
+    geoStatsConfig.enabled = config.enabled
+    geoStatsConfig.mode = config.mode
+    geoStatsConfig.batch_size = config.batch_size
+    geoStatsConfig.flush_interval = config.flush_interval
+    geoStatsConfig.retention_days = config.retention_days
+    geoStatsConfig.geoip_enabled = config.geoip_enabled
+  } catch (error) {
+    // 静默失败
+  }
+}
+
+async function handleGeoStatsToggle(enabled: boolean) {
+  geoStatsUpdating.value = true
+  try {
+    await apiUpdateGeoStatsConfig({ enabled })
+    ElMessage.success(enabled ? t('settings.geostatsEnableSuccess') : t('settings.geostatsDisableSuccess'))
+  } catch (error: any) {
+    // 回滚状态
+    geoStatsConfig.enabled = !enabled
+    ElMessage.error(error.response?.data?.message || t('settings.geostatsUpdateFailed'))
+  } finally {
+    geoStatsUpdating.value = false
+  }
+}
+
+async function updateGeoStatsConfig() {
+  try {
+    await apiUpdateGeoStatsConfig({
+      mode: geoStatsConfig.mode,
+      batch_size: geoStatsConfig.batch_size,
+      flush_interval: geoStatsConfig.flush_interval,
+      retention_days: geoStatsConfig.retention_days
+    })
+    ElMessage.success(t('settings.geostatsConfigSaved'))
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.message || t('settings.geostatsUpdateFailed'))
+  }
+}
+
+async function clearGeoStatsData() {
+  geoStatsClearing.value = true
+  try {
+    const result = await apiClearGeoStatsData({ all: true })
+    ElMessage.success(result.message || t('settings.geostatsClearSuccess'))
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.message || t('settings.geostatsClearFailed'))
+  } finally {
+    geoStatsClearing.value = false
+  }
+}
+
+// 检测版本更新
+async function checkForUpdate() {
+  checkingUpdate.value = true
+  try {
+    const response = await axios.get(`${auth.endpoint}/api/admin/settings/check-update`, {
+      headers: getHeaders()
+    })
+    updateInfo.checked = true
+    updateInfo.hasUpdate = response.data.has_update
+    updateInfo.latestVersion = response.data.latest_version
+    updateInfo.releaseUrl = response.data.release_url || ''
+    updateInfo.releaseNotes = response.data.release_notes || ''
+    updateInfo.publishedAt = response.data.published_at || ''
+
+    if (updateInfo.hasUpdate) {
+      ElMessage.warning(t('settings.newVersionAvailable', { version: updateInfo.latestVersion }))
+    } else {
+      ElMessage.success(t('settings.alreadyLatest'))
+    }
+  } catch (error: any) {
+    ElMessage.error(t('settings.checkUpdateFailed') + ': ' + (error.response?.data?.message || error.message))
+  } finally {
+    checkingUpdate.value = false
   }
 }
 
 onMounted(() => {
   loadSettings()
   loadGeoipStatus()
+  loadGeoStatsConfig()
 })
 </script>
 
@@ -767,5 +1022,73 @@ onMounted(() => {
 
 .info-link:hover {
   text-decoration: underline;
+}
+
+/* 版本更新相关样式 */
+.version-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.check-update-btn {
+  font-size: 12px;
+  padding: 0;
+}
+
+.update-alert {
+  margin: 12px 0;
+}
+
+.update-alert :deep(.el-alert__content) {
+  width: 100%;
+}
+
+.update-details {
+  margin-top: 8px;
+}
+
+.update-details p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #666;
+}
+
+.release-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #e67e22;
+  text-decoration: none;
+}
+
+.release-link:hover {
+  text-decoration: underline;
+}
+
+.update-status {
+  margin: 12px 0;
+}
+
+.update-status .el-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* GeoStats 相关样式 */
+.dependency-alert {
+  margin-bottom: 0;
+}
+
+.switch-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.switch-row label {
+  margin-bottom: 0;
 }
 </style>

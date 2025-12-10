@@ -422,3 +422,102 @@ export async function generatePresignedUrl(options: PresignOptions): Promise<Pre
 
   return resp.data
 }
+
+// ============================================================
+// GeoStats API
+// ============================================================
+
+// GeoStats 配置
+export interface GeoStatsConfig {
+  enabled: boolean
+  mode: string
+  batch_size: number
+  flush_interval: number
+  retention_days: number
+  geoip_enabled: boolean
+}
+
+// GeoStats 统计条目
+export interface GeoStatEntry {
+  id: number
+  date: string
+  country_code: string
+  country: string
+  city: string
+  region: string
+  request_count: number
+  created_at: string
+  updated_at: string
+}
+
+// GeoStats 聚合数据
+export interface GeoStatsAggregated {
+  country_code: string
+  country: string
+  city?: string
+  region?: string
+  total: number
+}
+
+// GeoStats 摘要
+export interface GeoStatsSummary {
+  total_requests: number
+  country_count: number
+  city_count: number
+  start_date: string
+  end_date: string
+}
+
+// 获取 GeoStats 配置
+export async function getGeoStatsConfig(): Promise<GeoStatsConfig> {
+  const resp = await axios.get(`${getBaseUrl()}/api/admin/geo-stats/config`, {
+    headers: getAdminHeaders()
+  })
+  return resp.data
+}
+
+// 更新 GeoStats 配置
+export async function updateGeoStatsConfig(config: Partial<GeoStatsConfig>): Promise<GeoStatsConfig> {
+  const resp = await axios.put(`${getBaseUrl()}/api/admin/geo-stats/config`, config, {
+    headers: getAdminHeaders()
+  })
+  return resp.data
+}
+
+// 获取 GeoStats 数据
+export async function getGeoStatsData(params: {
+  start_date?: string
+  end_date?: string
+  group_by?: string
+  limit?: number
+}): Promise<{ data: GeoStatsAggregated[], group_by: string, start_date: string, end_date: string }> {
+  const resp = await axios.get(`${getBaseUrl()}/api/admin/geo-stats/data`, {
+    headers: getAdminHeaders(),
+    params
+  })
+  return resp.data
+}
+
+// 获取 GeoStats 摘要
+export async function getGeoStatsSummary(params: {
+  start_date?: string
+  end_date?: string
+}): Promise<GeoStatsSummary> {
+  const resp = await axios.get(`${getBaseUrl()}/api/admin/geo-stats/summary`, {
+    headers: getAdminHeaders(),
+    params
+  })
+  return resp.data
+}
+
+// 清理 GeoStats 数据
+export async function clearGeoStatsData(params?: {
+  all?: boolean
+  before_date?: string
+}): Promise<{ success: boolean, message: string, affected?: number }> {
+  const resp = await axios.delete(`${getBaseUrl()}/api/admin/geo-stats/data`, {
+    headers: getAdminHeaders(),
+    params
+  })
+  return resp.data
+}

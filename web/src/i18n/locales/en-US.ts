@@ -159,7 +159,18 @@ pleaseConfirmPassword: 'Please confirm your password'
     file: 'File',
     size: 'Size',
     time: 'Time',
-    loadStatsFailed: 'Failed to load stats'
+    loadStatsFailed: 'Failed to load stats',
+    // Access source map
+    accessSourceMap: 'Access Source Distribution',
+    last7Days: 'Last 7 Days',
+    last30Days: 'Last 30 Days',
+    last90Days: 'Last 90 Days',
+    totalRequests: 'Total Requests',
+    countryCount: 'Countries',
+    cityCount: 'Cities',
+    noGeoStatsData: 'No access source data',
+    topCountries: 'Top Countries',
+    requests: 'requests'
   },
 
   // Buckets
@@ -679,7 +690,38 @@ changeFailed: 'Failed to change',
     geoipDownloadHint: 'Get database',
     geoipInfoTitle: 'About GeoIP Database',
     geoipInfoContent: 'GeoIP database is used to resolve IP addresses to geographic locations. Supports MaxMind GeoIP2 and GeoLite2 City databases (.mmdb format).\n\nRecommended: Use the free GeoLite2 City database, which requires registration on the MaxMind website.',
-    geoipSelectFile: 'Select .mmdb file'
+    geoipSelectFile: 'Select .mmdb file',
+    // Version check
+    checkUpdate: 'Check Update',
+    checking: 'Checking...',
+    newVersionAvailable: 'New version v{version} available',
+    alreadyLatest: 'Already up to date',
+    checkUpdateFailed: 'Failed to check update',
+    publishedAt: 'Published At',
+    viewRelease: 'View Release Notes',
+    // GeoStats settings
+    geostatsConfig: 'Access Source Statistics',
+    geostatsRequiresGeoip: 'GeoIP database must be enabled first to use this feature',
+    geostatsEnabled: 'Enable Statistics',
+    geostatsEnabledHint: 'Record geographic location information for each access for statistical analysis',
+    geostatsEnableSuccess: 'Access source statistics enabled',
+    geostatsDisableSuccess: 'Access source statistics disabled',
+    geostatsUpdateFailed: 'Failed to update configuration',
+    geostatsMode: 'Write Mode',
+    geostatsModeRealtime: 'Realtime',
+    geostatsModeBatch: 'Batch',
+    geostatsModeHint: 'Realtime mode writes immediately, batch mode buffers in memory and writes periodically for better performance',
+    geostatsBatchSize: 'Batch Buffer Size',
+    geostatsBatchSizeHint: 'Number of records to buffer in memory before writing to database',
+    geostatsFlushInterval: 'Flush Interval (seconds)',
+    geostatsFlushIntervalHint: 'Time interval for writing buffer to database',
+    geostatsRetentionDays: 'Data Retention Days',
+    geostatsRetentionDaysHint: 'Historical data older than this will be automatically cleaned up',
+    geostatsConfigSaved: 'Configuration saved',
+    geostatsClearData: 'Clear All Data',
+    geostatsClearConfirm: 'Are you sure you want to clear all access source statistics data? This action cannot be undone.',
+    geostatsClearSuccess: 'Data cleared',
+    geostatsClearFailed: 'Failed to clear data'
   },
 
   // Language switch

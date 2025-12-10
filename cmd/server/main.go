@@ -62,8 +62,14 @@ func main() {
 		utils.Info("信任代理已配置", "cidrs", config.Global.Security.TrustedProxies)
 	}
 
-	// 4.2 初始化 GeoIP 服务
-	utils.InitGeoIP(config.Global.Storage.DataPath)
+	// 4.2 初始化 GeoIP 服务（GeoIP.mmdb 存放在数据库同级目录）
+	utils.InitGeoIP(config.Global.Storage.DBPath)
+
+	// 4.3 初始化 GeoStats 服务
+	storage.InitGeoStatsService(metadata)
+	if config.Global.GeoStats.Enabled {
+		utils.Info("GeoStats 已启用", "mode", config.Global.GeoStats.Mode)
+	}
 
 	// 5. 初始化文件存储（使用可能更新后的路径）
 	filestore, err := storage.NewFileStore(config.Global.Storage.DataPath)
@@ -123,6 +129,9 @@ func main() {
 		utils.Error("服务器关闭失败", "error", err)
 		os.Exit(1)
 	}
+
+	// 停止 GeoStats 服务（刷新缓冲区）
+	storage.GetGeoStatsService().Stop()
 
 	utils.Info("服务器已安全关闭")
 }
