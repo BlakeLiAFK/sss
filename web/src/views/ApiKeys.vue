@@ -20,6 +20,7 @@
         class="data-table"
         :header-cell-style="{ background: '#f8fafc', color: '#475569', fontWeight: 600 }"
       >
+        <!-- @vue-generic {APIKey} -->
         <el-table-column prop="access_key_id" label="Access Key ID" width="220">
           <template #default="{ row }">
             <div class="key-cell">
@@ -35,16 +36,19 @@
             </div>
           </template>
         </el-table-column>
+        <!-- @vue-generic {APIKey} -->
         <el-table-column prop="description" :label="t('apiKeys.description')" min-width="150">
           <template #default="{ row }">
             <span class="desc-text">{{ row.description || '-' }}</span>
           </template>
         </el-table-column>
+        <!-- @vue-generic {APIKey} -->
         <el-table-column prop="created_at" :label="t('apiKeys.created')" width="160">
           <template #default="{ row }">
             <span class="date-text">{{ formatDate(row.created_at) }}</span>
           </template>
         </el-table-column>
+        <!-- @vue-generic {APIKey} -->
         <el-table-column prop="enabled" :label="t('apiKeys.status')" width="100" align="center">
           <template #default="{ row }">
             <el-switch
@@ -55,6 +59,7 @@
             />
           </template>
         </el-table-column>
+        <!-- @vue-generic {APIKey} -->
         <el-table-column :label="t('apiKeys.permissions')" min-width="220">
           <template #default="{ row }">
             <div class="permissions-list">
@@ -72,6 +77,7 @@
             </div>
           </template>
         </el-table-column>
+        <!-- @vue-generic {APIKey} -->
         <el-table-column :label="t('common.actions')" width="260" align="center" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="showPermDialog(row)">

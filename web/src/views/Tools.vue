@@ -49,6 +49,7 @@
 
             <!-- GC 结果 -->
             <div v-if="gcResult" class="gc-result">
+              <el-alert v-if="gcResult.details_truncated" type="info" :closable="false" :title="t('tools.gcDetailsTruncated')" />
               <el-row :gutter="24" class="gc-stats">
                 <el-col :span="8">
                   <div class="stat-card" :class="{ danger: gcResult.orphan_count > 0 }">
@@ -93,9 +94,9 @@
               <!-- 过期上传列表 -->
               <div v-if="gcResult.expired_uploads && gcResult.expired_uploads.length > 0" class="gc-files">
                 <h4>{{ t('tools.expiredUploadsCount', { count: gcResult.expired_uploads.length }) }}</h4>
-                <el-table :data="gcResult.expired_uploads.slice(0, 10)" size="small">
+                <el-table :data="gcResult.expired_uploads.slice(0, 10).map(uploadId => ({ uploadId }))" size="small">
                   <el-table-column prop="" :label="t('tools.uploadId')">
-                    <template #default="{ row }">{{ row }}</template>
+                    <template #default="{ row }">{{ row.uploadId }}</template>
                   </el-table-column>
                 </el-table>
                 <div v-if="gcResult.expired_uploads.length > 10" class="more-hint">
@@ -263,11 +264,13 @@
             <!-- 迁移任务列表 -->
             <div v-if="migrateJobs.length > 0" class="migrate-list">
               <el-table :data="migrateJobs" stripe>
+                <!-- @vue-generic {MigrateProgress} -->
                 <el-table-column :label="t('tools.jobId')" width="120">
                   <template #default="{ row }">
                     <span class="job-id">{{ row.jobId.substring(0, 8) }}...</span>
                   </template>
                 </el-table-column>
+                <!-- @vue-generic {MigrateProgress} -->
                 <el-table-column :label="t('tools.source')" min-width="200">
                   <template #default="{ row }">
                     <div class="source-info">
@@ -276,11 +279,13 @@
                     </div>
                   </template>
                 </el-table-column>
+                <!-- @vue-generic {MigrateProgress} -->
                 <el-table-column :label="t('tools.target')" width="150">
                   <template #default="{ row }">
                     <span>{{ row.config.targetBucket }}{{ row.config.targetPrefix ? '/' + row.config.targetPrefix : '' }}</span>
                   </template>
                 </el-table-column>
+                <!-- @vue-generic {MigrateProgress} -->
                 <el-table-column :label="t('tools.progress')" width="180">
                   <template #default="{ row }">
                     <div class="progress-cell">
@@ -296,6 +301,7 @@
                     </div>
                   </template>
                 </el-table-column>
+                <!-- @vue-generic {MigrateProgress} -->
                 <el-table-column :label="t('tools.status')" width="110">
                   <template #default="{ row }">
                     <el-tag :type="getMigrateStatusType(row.status)" size="small">
@@ -303,11 +309,13 @@
                     </el-tag>
                   </template>
                 </el-table-column>
+                <!-- @vue-generic {MigrateProgress} -->
                 <el-table-column :label="t('tools.duration')" width="100">
                   <template #default="{ row }">
                     <span class="duration">{{ getMigrateDuration(row) }}</span>
                   </template>
                 </el-table-column>
+                <!-- @vue-generic {MigrateProgress} -->
                 <el-table-column :label="t('common.actions')" width="120" fixed="right">
                   <template #default="{ row }">
                     <el-button

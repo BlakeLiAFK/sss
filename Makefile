@@ -6,7 +6,7 @@ all: build
 # 构建前端
 build-frontend:
 	@echo "==> 构建前端..."
-	cd web && npm install && npm run build:fast
+	cd web && npm ci && npm run build
 	@echo "==> 复制前端文件到 internal/api/static/..."
 	rm -rf internal/api/static
 	mkdir -p internal/api/static

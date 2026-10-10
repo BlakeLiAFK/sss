@@ -95,7 +95,9 @@
         @row-dblclick="handleRowClick"
         @selection-change="handleSelectionChange"
       >
+        <!-- @vue-generic {S3Object} -->
         <el-table-column type="selection" width="55" />
+        <!-- @vue-generic {S3Object} -->
         <el-table-column prop="key" :label="t('objects.name')" min-width="300">
           <template #default="{ row }">
             <div class="file-cell">
@@ -106,16 +108,19 @@
             </div>
           </template>
         </el-table-column>
+        <!-- @vue-generic {S3Object} -->
         <el-table-column prop="size" :label="t('objects.size')" width="120">
           <template #default="{ row }">
             <span class="size-text">{{ formatSize(row.size) }}</span>
           </template>
         </el-table-column>
+        <!-- @vue-generic {S3Object} -->
         <el-table-column prop="last_modified" :label="t('objects.modified')" width="180">
           <template #default="{ row }">
             <span class="date-text">{{ formatDate(row.last_modified) }}</span>
           </template>
         </el-table-column>
+        <!-- @vue-generic {S3Object} -->
         <el-table-column :label="t('objects.actions')" width="320" align="center">
           <template #default="{ row }">
             <el-button size="small" text @click="handlePreview(row)">
@@ -191,7 +196,7 @@
       <template #footer>
         <el-button @click="cancelUpload">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" class="primary-btn" @click="startUpload" :disabled="pendingFilesWithPath.length === 0">
-          {{ t('objects.uploadCount', { count: pendingFilesWithPath.length }) }}
+          {{ t('objects.startUpload', { count: pendingFilesWithPath.length }) }}
         </el-button>
       </template>
     </el-dialog>
@@ -316,7 +321,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox, type TableInstance } from 'element-plus'
 import { ArrowRight, Upload, Document, Delete, Search, Download, Link, Edit, Close, View } from '@element-plus/icons-vue'
-import { listObjects, deleteObject, getObjectUrl, uploadObject, generatePresignedUrl, getBucketPublic, copyObject, searchObjects, batchDeleteObjects, batchDownloadObjects, type S3Object } from '../api/admin'
+import { listObjects, downloadObject, deleteObject, getObjectUrl, uploadObject, generatePresignedUrl, getBucketPublic, copyObject, searchObjects, batchDeleteObjects, batchDownloadObjects, type S3Object } from '../api/admin'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -455,24 +460,8 @@ function handleRowClick(row: S3Object) {
   handleDownload(row.key)
 }
 
-async function handleDownload(key: string) {
-  try {
-    let url: string
-    if (isPublic.value) {
-      url = getObjectUrl(bucketName.value, key)
-    } else {
-      const result = await generatePresignedUrl({
-        bucket: bucketName.value,
-        key: key,
-        method: 'GET',
-        expiresMinutes: 60
-      })
-      url = result.url
-    }
-    window.open(url, '_blank')
-  } catch (e: any) {
-    ElMessage.error(t('objects.getDownloadLinkFailed') + ': ' + e.message)
-  }
+function handleDownload(key: string) {
+  downloadObject(bucketName.value, key)
 }
 
 async function handleCopyLink(key: string) {

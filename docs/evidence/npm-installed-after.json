@@ -1,0 +1,91 @@
+{
+  "version": "1.0.0",
+  "name": "sss-web",
+  "dependencies": {
+    "@element-plus/icons-vue": {
+      "version": "2.3.2",
+      "resolved": "https://registry.npmjs.org/@element-plus/icons-vue/-/icons-vue-2.3.2.tgz",
+      "overridden": false
+    },
+    "@types/leaflet": {
+      "version": "1.9.22",
+      "resolved": "https://registry.npmjs.org/@types/leaflet/-/leaflet-1.9.22.tgz",
+      "overridden": false
+    },
+    "@vitejs/plugin-vue": {
+      "version": "6.0.9",
+      "resolved": "https://registry.npmjs.org/@vitejs/plugin-vue/-/plugin-vue-6.0.9.tgz",
+      "overridden": false
+    },
+    "axios": {
+      "version": "1.20.0",
+      "resolved": "https://registry.npmjs.org/axios/-/axios-1.20.0.tgz",
+      "overridden": false
+    },
+    "echarts": {
+      "version": "6.1.0",
+      "resolved": "https://registry.npmjs.org/echarts/-/echarts-6.1.0.tgz",
+      "overridden": false
+    },
+    "element-plus": {
+      "version": "2.14.7",
+      "resolved": "https://registry.npmjs.org/element-plus/-/element-plus-2.14.7.tgz",
+      "overridden": false
+    },
+    "leaflet": {
+      "version": "1.9.4",
+      "resolved": "https://registry.npmjs.org/leaflet/-/leaflet-1.9.4.tgz",
+      "overridden": false
+    },
+    "pinia": {
+      "version": "2.3.1",
+      "resolved": "https://registry.npmjs.org/pinia/-/pinia-2.3.1.tgz",
+      "overridden": false
+    },
+    "playwright": {
+      "version": "1.64.0",
+      "resolved": "https://registry.npmjs.org/playwright/-/playwright-1.64.0.tgz",
+      "overridden": false
+    },
+    "typescript": {
+      "version": "5.9.3",
+      "resolved": "https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz",
+      "overridden": false
+    },
+    "unplugin-auto-import": {
+      "version": "20.3.0",
+      "resolved": "https://registry.npmjs.org/unplugin-auto-import/-/unplugin-auto-import-20.3.0.tgz",
+      "overridden": false
+    },
+    "unplugin-vue-components": {
+      "version": "30.0.0",
+      "resolved": "https://registry.npmjs.org/unplugin-vue-components/-/unplugin-vue-components-30.0.0.tgz",
+      "overridden": false
+    },
+    "vite": {
+      "version": "8.3.4",
+      "resolved": "https://registry.npmjs.org/vite/-/vite-8.3.4.tgz",
+      "overridden": false
+    },
+    "vue-i18n": {
+      "version": "11.4.13",
+      "resolved": "https://registry.npmjs.org/vue-i18n/-/vue-i18n-11.4.13.tgz",
+      "overridden": false
+    },
+    "vue-router": {
+      "version": "4.6.4",
+      "resolved": "https://registry.npmjs.org/vue-router/-/vue-router-4.6.4.tgz",
+      "overridden": false
+    },
+    "vue-tsc": {
+      "version": "3.3.12",
+      "resolved": "https://registry.npmjs.org/vue-tsc/-/vue-tsc-3.3.12.tgz",
+      "overridden": false
+    },
+    "vue": {
+      "version": "3.5.43",
+      "resolved": "https://registry.npmjs.org/vue/-/vue-3.5.43.tgz",
+      "overridden": false
+    }
+  }
+}

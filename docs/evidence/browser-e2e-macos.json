@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "platform": "darwin",
+  "arch": "arm64",
+  "browser": "156.0.8078.4",
+  "steps": [
+    "first-run installation in browser",
+    "login and authenticated dashboard",
+    "create private bucket",
+    "upload and object list",
+    "private object preview",
+    "download exact uploaded bytes",
+    "ECharts rendering and Chinese/English locale switching",
+    "save settings and persist after reload",
+    "logout and protected-route redirect",
+    "recovery requires local authorization and discloses no absolute path",
+    "recovery form preserves input on simulated server failure and retries"
+  ],
+  "runtimeErrors": []
+}

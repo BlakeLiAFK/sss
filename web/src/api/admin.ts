@@ -46,6 +46,17 @@ function getAdminHeaders() {
   }
 }
 
+// Stream downloads through the same-origin session cookie; no in-memory blob or signed URL is needed.
+export function downloadObject(bucket: string, key: string): void {
+  const url = `${getBaseUrl()}/api/admin/buckets/${encodeURIComponent(bucket)}/download?key=${encodeURIComponent(key)}`
+  const link = document.createElement('a')
+  link.href = url
+  link.download = key.split('/').pop() || 'download'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
 // 获取 API 基础 URL
 function getBaseUrl() {
   const auth = useAuthStore()
@@ -78,6 +89,7 @@ export interface OrphanFile {
 
 // GC 结果
 export interface GCResult {
+  details_truncated?: boolean
   orphan_files: OrphanFile[]
   orphan_count: number
   orphan_size: number

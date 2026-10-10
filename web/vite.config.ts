@@ -27,13 +27,11 @@ export default defineConfig({
     // 分包策略，减少单个文件大小
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Vue 核心
-          'vue-vendor': ['vue', 'vue-router', 'pinia', 'vue-i18n'],
-          // Element Plus 图标单独打包
-          'el-icons': ['@element-plus/icons-vue'],
-          // Leaflet 地图
-          'leaflet': ['leaflet']
+        manualChunks(id) {
+          if (!id.includes('/node_modules/')) return
+          if (id.includes('/@element-plus/icons-vue/')) return 'el-icons'
+          if (id.includes('/leaflet/')) return 'leaflet'
+          if (/\/(vue|@vue|vue-router|pinia|vue-i18n|@intlify)\//.test(id)) return 'vue-vendor'
         }
       }
     },
