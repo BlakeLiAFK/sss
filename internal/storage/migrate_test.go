@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -152,7 +154,7 @@ func TestStartMigrationSuccess(t *testing.T) {
 	}
 
 	cfg := MigrateConfig{
-		SourceEndpoint:  "http://localhost:9000",
+		SourceEndpoint:  isolatedMigrationEndpoint(t, manager),
 		SourceAccessKey: "minioadmin",
 		SourceSecretKey: "minioadmin",
 		SourceBucket:    "source",
@@ -205,7 +207,7 @@ func TestGetProgress(t *testing.T) {
 	}
 
 	cfg := MigrateConfig{
-		SourceEndpoint:  "http://localhost:9000",
+		SourceEndpoint:  isolatedMigrationEndpoint(t, manager),
 		SourceAccessKey: "minioadmin",
 		SourceSecretKey: "minioadmin",
 		SourceBucket:    "source",
@@ -253,7 +255,7 @@ func TestGetAllJobs(t *testing.T) {
 
 	// 启动3个任务
 	cfg := MigrateConfig{
-		SourceEndpoint:  "http://localhost:9000",
+		SourceEndpoint:  isolatedMigrationEndpoint(t, manager),
 		SourceAccessKey: "minioadmin",
 		SourceSecretKey: "minioadmin",
 		SourceBucket:    "source",
@@ -300,7 +302,7 @@ func TestCancelMigration(t *testing.T) {
 	}
 
 	cfg := MigrateConfig{
-		SourceEndpoint:  "http://localhost:9000",
+		SourceEndpoint:  isolatedMigrationEndpoint(t, manager),
 		SourceAccessKey: "minioadmin",
 		SourceSecretKey: "minioadmin",
 		SourceBucket:    "source",
@@ -360,7 +362,7 @@ func TestDeleteJob(t *testing.T) {
 	}
 
 	cfg := MigrateConfig{
-		SourceEndpoint:  "http://localhost:9000",
+		SourceEndpoint:  isolatedMigrationEndpoint(t, manager),
 		SourceAccessKey: "minioadmin",
 		SourceSecretKey: "minioadmin",
 		SourceBucket:    "source",
@@ -424,7 +426,7 @@ func TestGetJobStats(t *testing.T) {
 	}
 
 	cfg := MigrateConfig{
-		SourceEndpoint:  "http://localhost:9000",
+		SourceEndpoint:  isolatedMigrationEndpoint(t, manager),
 		SourceAccessKey: "minioadmin",
 		SourceSecretKey: "minioadmin",
 		SourceBucket:    "source",
@@ -479,7 +481,7 @@ func TestMigrateConfigDefaultRegion(t *testing.T) {
 	}
 
 	cfg := MigrateConfig{
-		SourceEndpoint:  "http://localhost:9000",
+		SourceEndpoint:  isolatedMigrationEndpoint(t, manager),
 		SourceAccessKey: "minioadmin",
 		SourceSecretKey: "minioadmin",
 		SourceBucket:    "source",
@@ -519,7 +521,7 @@ func TestMigrateConfigWithPrefix(t *testing.T) {
 	}
 
 	cfg := MigrateConfig{
-		SourceEndpoint:  "http://localhost:9000",
+		SourceEndpoint:  isolatedMigrationEndpoint(t, manager),
 		SourceAccessKey: "minioadmin",
 		SourceSecretKey: "minioadmin",
 		SourceBucket:    "source",
@@ -574,7 +576,7 @@ func TestConcurrentMigration(t *testing.T) {
 	errors := make(chan error, numJobs)
 
 	cfg := MigrateConfig{
-		SourceEndpoint:  "http://localhost:9000",
+		SourceEndpoint:  isolatedMigrationEndpoint(t, manager),
 		SourceAccessKey: "minioadmin",
 		SourceSecretKey: "minioadmin",
 		SourceBucket:    "source",
@@ -644,7 +646,7 @@ func TestMigrateProgressFields(t *testing.T) {
 	}
 
 	cfg := MigrateConfig{
-		SourceEndpoint:  "http://localhost:9000",
+		SourceEndpoint:  isolatedMigrationEndpoint(t, manager),
 		SourceAccessKey: "minioadmin",
 		SourceSecretKey: "minioadmin",
 		SourceBucket:    "source",
@@ -711,7 +713,7 @@ func TestMigrateStatusTransitions(t *testing.T) {
 	}
 
 	cfg := MigrateConfig{
-		SourceEndpoint:  "http://localhost:9000",
+		SourceEndpoint:  isolatedMigrationEndpoint(t, manager),
 		SourceAccessKey: "minioadmin",
 		SourceSecretKey: "minioadmin",
 		SourceBucket:    "source",
@@ -761,7 +763,7 @@ func BenchmarkStartMigration(b *testing.B) {
 	_ = store.CreateBucket("target")
 
 	cfg := MigrateConfig{
-		SourceEndpoint:  "http://localhost:9000",
+		SourceEndpoint:  isolatedMigrationEndpoint(b, manager),
 		SourceAccessKey: "minioadmin",
 		SourceSecretKey: "minioadmin",
 		SourceBucket:    "source",
@@ -789,7 +791,7 @@ func BenchmarkGetProgress(b *testing.B) {
 	_ = store.CreateBucket("target")
 
 	cfg := MigrateConfig{
-		SourceEndpoint:  "http://localhost:9000",
+		SourceEndpoint:  isolatedMigrationEndpoint(b, manager),
 		SourceAccessKey: "minioadmin",
 		SourceSecretKey: "minioadmin",
 		SourceBucket:    "source",
@@ -817,7 +819,7 @@ func BenchmarkGetJobStats(b *testing.B) {
 	_ = store.CreateBucket("target")
 
 	cfg := MigrateConfig{
-		SourceEndpoint:  "http://localhost:9000",
+		SourceEndpoint:  isolatedMigrationEndpoint(b, manager),
 		SourceAccessKey: "minioadmin",
 		SourceSecretKey: "minioadmin",
 		SourceBucket:    "source",
@@ -841,4 +843,17 @@ func BenchmarkGetJobStats(b *testing.B) {
 	for _, jobID := range jobIDs {
 		_ = manager.CancelMigration(jobID)
 	}
+}
+
+func isolatedMigrationEndpoint(t testing.TB, m *MigrateManager) string {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	t.Cleanup(func() {
+		m.mu.Lock()
+		for _, cancel := range m.cancels {
+			cancel()
+		}
+		m.mu.Unlock()
+		server.Close()
+	})
+	return server.URL
 }

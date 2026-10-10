@@ -65,6 +65,10 @@ func (s *Server) handleListBuckets(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateBucket 创建存储桶
 func (s *Server) handleCreateBucket(w http.ResponseWriter, r *http.Request, bucket string) {
+	if !utils.ValidBucketName(bucket) {
+		utils.WriteError(w, utils.S3Error{Code: "InvalidBucketName", Message: "Invalid or reserved bucket name"}, 400, r.URL.Path)
+		return
+	}
 	// 直接尝试创建，依赖数据库 PRIMARY KEY 约束处理冲突
 	if err := s.metadata.CreateBucket(bucket); err != nil {
 		// 检查是否是重复键错误（桶已存在）
@@ -115,11 +119,7 @@ func (s *Server) handleDeleteBucket(w http.ResponseWriter, r *http.Request, buck
 		return
 	}
 
-	// 删除目录
-	if err := s.filestore.DeleteBucket(bucket); err != nil {
-		utils.Error("delete bucket directory failed", "error", err)
-	}
-
+	// Physical data reclamation is deferred to GC after namespace deletion.
 	w.WriteHeader(http.StatusNoContent)
 }
 

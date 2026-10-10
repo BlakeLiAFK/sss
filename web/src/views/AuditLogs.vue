@@ -261,7 +261,8 @@ const actionLabels: Record<string, string> = {
 }
 
 // 操作类型颜色映射
-const actionTypes: Record<string, string> = {
+type TagType = 'primary' | 'success' | 'warning' | 'info' | 'danger'
+const actionTypes: Record<string, TagType> = {
   login: 'success',
   login_failed: 'danger',
   logout: 'info',
@@ -284,7 +285,7 @@ function getActionLabel(action: string): string {
   return key ? t(key) : action
 }
 
-function getActionType(action: string): string {
+function getActionType(action: string): TagType {
   return actionTypes[action] || 'info'
 }
 

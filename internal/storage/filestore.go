@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sss/internal/utils"
 	"strings"
 	"sync"
 )
@@ -39,20 +40,10 @@ func NewFileStore(basePath string) (*FileStore, error) {
 
 // validateKey 验证key是否安全（防止路径遍历攻击）
 func validateKey(key string) error {
-	// 禁止空key
 	if key == "" {
 		return ErrInvalidKey
 	}
-	// 禁止包含..的路径遍历
-	if strings.Contains(key, "..") {
-		return ErrInvalidPath
-	}
-	// 禁止绝对路径
-	if strings.HasPrefix(key, "/") || strings.HasPrefix(key, "\\") {
-		return ErrInvalidPath
-	}
-	// 禁止包含空字节
-	if strings.Contains(key, "\x00") {
+	if utils.UnsafeObjectKey(key) {
 		return ErrInvalidPath
 	}
 	return nil
@@ -95,7 +86,7 @@ func (f *FileStore) getPath(bucket, key string) (string, error) {
 
 	// 确保最终路径在basePath内（双重验证）
 	cleanPath := filepath.Clean(fullPath)
-	if !strings.HasPrefix(cleanPath, f.basePath) {
+	if !withinBase(f.basePath, cleanPath) {
 		return "", ErrInvalidPath
 	}
 
@@ -132,7 +123,7 @@ func (f *FileStore) DeleteBucket(name string) error {
 	bucketPath := filepath.Join(f.basePath, name)
 	// 确保路径在basePath内
 	cleanPath := filepath.Clean(bucketPath)
-	if !strings.HasPrefix(cleanPath, f.basePath) {
+	if !withinBase(f.basePath, cleanPath) {
 		return ErrInvalidPath
 	}
 	return os.RemoveAll(cleanPath)
@@ -196,7 +187,7 @@ func (f *FileStore) GetObject(storagePath string) (*os.File, error) {
 	}
 
 	// 验证路径在basePath内
-	if !strings.HasPrefix(cleanPath, f.basePath) {
+	if !withinBase(f.basePath, cleanPath) {
 		return nil, ErrInvalidPath
 	}
 	return os.Open(cleanPath)
@@ -217,7 +208,7 @@ func (f *FileStore) DeleteObject(storagePath string) error {
 	}
 
 	// 验证路径在basePath内
-	if !strings.HasPrefix(cleanPath, f.basePath) {
+	if !withinBase(f.basePath, cleanPath) {
 		return ErrInvalidPath
 	}
 	return os.Remove(cleanPath)
@@ -238,7 +229,7 @@ func (f *FileStore) CopyObject(srcStoragePath, destBucket, destKey string) (stri
 	}
 
 	// 验证源路径在basePath内
-	if !strings.HasPrefix(cleanSrcPath, f.basePath) {
+	if !withinBase(f.basePath, cleanSrcPath) {
 		return "", "", ErrInvalidPath
 	}
 
@@ -406,4 +397,9 @@ func syncDirectory(path string) error {
 	}
 	defer dir.Close()
 	return dir.Sync()
+}
+
+func withinBase(base, path string) bool {
+	rel, err := filepath.Rel(base, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && !filepath.IsAbs(rel)
 }

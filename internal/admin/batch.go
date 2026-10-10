@@ -59,7 +59,7 @@ func (h *Handler) batchDeleteObjects(w http.ResponseWriter, r *http.Request, buc
 
 	for _, key := range req.Keys {
 		// 安全检查：防止路径遍历
-		if strings.Contains(key, "..") {
+		if utils.UnsafeObjectKey(key) {
 			result.FailedCount++
 			result.FailedKeys = append(result.FailedKeys, key)
 			continue

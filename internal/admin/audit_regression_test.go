@@ -17,7 +17,7 @@ func TestAuditMalformedMaintenanceDoesNotMutate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, body := range []string{"", "{", `{} {}`, `{"max_upload_age":9223372036854775807}`} {
+	for _, body := range []string{"", "{", `{}`, `{} {}`, `{"max_upload_age":9223372036854775807}`} {
 		w := httptest.NewRecorder()
 		h.executeGC(w, httptest.NewRequest("POST", "/api/admin/storage/gc", strings.NewReader(body)))
 		if w.Code != 400 || !strings.Contains(w.Header().Get("Content-Type"), "json") {

@@ -84,11 +84,19 @@ func VerifyRequestAndGetAccessKey(r *http.Request) (string, bool) {
 	signature := matches[5]
 
 	amzDate := r.Header.Get("X-Amz-Date")
+	dateHeader := "x-amz-date"
+	if amzDate == "" {
+		amzDate = r.Header.Get("Date")
+		dateHeader = "date"
+	}
 	stamp, err := time.Parse("20060102T150405Z", amzDate)
+	if err != nil && dateHeader == "date" {
+		stamp, err = http.ParseTime(amzDate)
+	}
 	if err != nil || stamp.Format("20060102") != dateStr || time.Since(stamp) > 15*time.Minute || time.Until(stamp) > 15*time.Minute {
 		return "", false
 	}
-	if !strings.Contains(";"+signedHeaders+";", ";host;") || !strings.Contains(";"+signedHeaders+";", ";x-amz-date;") {
+	if !strings.Contains(";"+signedHeaders+";", ";host;") || !strings.Contains(";"+signedHeaders+";", ";"+dateHeader+";") {
 		return "", false
 	}
 	payload := r.Header.Get("X-Amz-Content-Sha256")

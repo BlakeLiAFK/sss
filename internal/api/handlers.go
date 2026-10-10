@@ -82,7 +82,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	utils.Info("request", "method", r.Method, "path", r.URL.Path, "query", r.URL.RawQuery)
+	utils.Info("request", "method", r.Method, "path", r.URL.Path, "request_id", w.Header().Get("x-amz-request-id"))
 
 	// 记录 GeoStats（仅对 S3 API 请求，排除静态资源和管理 API）
 	s.recordGeoStats(r)
@@ -174,7 +174,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	} else if strings.HasPrefix(r.URL.Path, "/assets/") {
 		s.serveStatic(w, r)
 		return
-	} else if strings.HasPrefix(r.URL.Path, "/admin") {
+	} else if r.URL.Path == "/admin" || strings.HasPrefix(r.URL.Path, "/admin/") {
 		// 管理界面 SPA 路由，返回 index.html 让前端路由处理
 		s.serveStatic(w, r)
 		return
@@ -286,6 +286,21 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		case "x-id", "uploads", "uploadId", "partNumber", "part-number-marker", "max-parts", "list-type", "prefix", "delimiter", "marker", "max-keys", "continuation-token", "start-after", "encoding-type":
 		default:
 			utils.WriteError(w, utils.S3Error{Code: "NotImplemented", Message: "Unsupported subresource"}, http.StatusNotImplemented, r.URL.Path)
+			return
+		}
+	}
+	for name := range query {
+		valid := true
+		switch name {
+		case "partNumber":
+			valid = query.Has("uploadId") && r.Method == "PUT"
+		case "part-number-marker", "max-parts":
+			valid = query.Has("uploadId") && r.Method == "GET"
+		case "list-type", "prefix", "delimiter", "marker", "max-keys", "continuation-token", "start-after", "encoding-type":
+			valid = bucket != "" && key == "" && r.Method == "GET" && !query.Has("uploadId")
+		}
+		if !valid {
+			utils.WriteError(w, utils.ErrInvalidArgument, 400, r.URL.Path)
 			return
 		}
 	}
@@ -410,7 +425,7 @@ func (s *Server) handlePresign(w http.ResponseWriter, r *http.Request) {
 		utils.WriteErrorResponse(w, "InvalidBucketName", "Invalid bucket name", http.StatusBadRequest)
 		return
 	}
-	if strings.Contains(req.Key, "..") || strings.HasPrefix(req.Key, "/") {
+	if utils.UnsafeObjectKey(req.Key) || strings.HasPrefix(req.Key, "/") {
 		utils.WriteErrorResponse(w, "InvalidKey", "Invalid object key", http.StatusBadRequest)
 		return
 	}

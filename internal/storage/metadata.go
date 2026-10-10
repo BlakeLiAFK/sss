@@ -475,3 +475,20 @@ func (m *MetadataStore) CompleteMultipart(obj *Object, uploadID string) error {
 		return tx.Commit()
 	})
 }
+
+func (m *MetadataStore) AbortMultipart(uploadID string) error {
+	return m.withWriteLock(func() error {
+		tx, err := m.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec("DELETE FROM parts WHERE upload_id=?", uploadID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec("DELETE FROM multipart_uploads WHERE upload_id=?", uploadID); err != nil {
+			return err
+		}
+		return tx.Commit()
+	})
+}

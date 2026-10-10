@@ -24,6 +24,7 @@ func main() {
 	port := flag.Int("port", 8080, "监听端口")
 	dbPath := flag.String("db", "./data/metadata.db", "数据库路径")
 	dataPath := flag.String("data", "./data/buckets", "数据存储路径")
+	importLegacy := flag.Bool("import-legacy-key", false, "Explicitly import a legacy settings-only API key once; never needed for managed keys")
 	logLevel := flag.String("log", "info", "日志级别 (debug/info/warn/error)")
 	flag.Parse()
 
@@ -78,6 +79,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	if *importLegacy {
+		id, secret := metadata.GetAuthConfig()
+		if err := metadata.ImportLegacyAPIKey(id, secret); err != nil {
+			utils.Error("Legacy import failed", "error", err)
+			os.Exit(1)
+		}
+		if err := metadata.SetSetting(storage.SettingAuthSecretAccessKey, ""); err != nil {
+			utils.Error("Legacy secret cleanup failed", "error", err)
+			os.Exit(1)
+		}
+	}
 	// 6. 初始化 API Key 缓存
 	auth.InitAPIKeyCache(metadata)
 	utils.Info("API Key 缓存已初始化")

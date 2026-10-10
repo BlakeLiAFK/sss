@@ -11,8 +11,8 @@ import (
 
 // GCRequest 垃圾回收请求
 type GCRequest struct {
-	MaxUploadAge int  `json:"max_upload_age"` // 过期上传的最大年龄（小时）
-	DryRun       bool `json:"dry_run"`        // 是否仅扫描不清理
+	MaxUploadAge int   `json:"max_upload_age"` // 过期上传的最大年龄（小时）
+	DryRun       *bool `json:"dry_run"`        // 是否仅扫描不清理
 }
 
 // IntegrityRequest 完整性检查请求
@@ -139,6 +139,10 @@ func (h *Handler) executeGC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.DryRun == nil {
+		writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+		return
+	}
 	if req.MaxUploadAge < 0 || req.MaxUploadAge > 87600 {
 		writeAdminError(w, utils.ErrInvalidArgument, 400, "")
 		return
@@ -149,7 +153,7 @@ func (h *Handler) executeGC(w http.ResponseWriter, r *http.Request) {
 		maxUploadAge = 24 * time.Hour
 	}
 
-	result, err := storage.RunGC(h.filestore, h.metadata, maxUploadAge, req.DryRun)
+	result, err := storage.RunGC(h.filestore, h.metadata, maxUploadAge, *req.DryRun)
 	if err != nil {
 		utils.Error("gc execute failed", "error", err)
 		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")

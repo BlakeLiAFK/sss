@@ -67,7 +67,7 @@ func (f *FileStore) ScanOrphanFiles(metadata *MetadataStore) (*GCResult, error) 
 	// 遍历磁盘文件
 	err = filepath.Walk(f.basePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil // 忽略错误继续
+			return err
 		}
 
 		// 跳过目录
@@ -108,7 +108,7 @@ func (f *FileStore) CleanOrphanFiles(files []OrphanFile) error {
 
 		// 安全检查：确保路径在 basePath 下
 		cleanPath := filepath.Clean(fullPath)
-		if !strings.HasPrefix(cleanPath, f.basePath) {
+		if !withinBase(f.basePath, cleanPath) {
 			continue // 跳过可疑路径
 		}
 
@@ -314,7 +314,10 @@ func RunGC(filestore *FileStore, metadata *MetadataStore, maxUploadAge time.Dura
 
 	// 2. 扫描 .multipart 中的孤立分片
 	multipartOrphans, multipartSize, err := filestore.ScanMultipartOrphans(metadata)
-	if err == nil && len(multipartOrphans) > 0 {
+	if err != nil {
+		return nil, err
+	}
+	if len(multipartOrphans) > 0 {
 		result.OrphanFiles = append(result.OrphanFiles, multipartOrphans...)
 		result.OrphanCount += len(multipartOrphans)
 		result.OrphanSize += multipartSize

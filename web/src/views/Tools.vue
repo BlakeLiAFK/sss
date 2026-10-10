@@ -763,7 +763,7 @@ async function handleRepairIntegrity() {
   }
 }
 
-function getIssueTagType(issueType: string): string {
+function getIssueTagType(issueType: string): 'danger' | 'warning' | 'info' {
   switch (issueType) {
     case 'missing_file':
       return 'danger'
@@ -1021,7 +1021,7 @@ async function handleDeleteMigration(job: MigrateProgress) {
   }
 }
 
-function getMigrateStatusType(status: string): string {
+function getMigrateStatusType(status: string): 'primary' | 'success' | 'warning' | 'info' | 'danger' {
   switch (status) {
     case 'completed': return 'success'
     case 'running': return 'primary'

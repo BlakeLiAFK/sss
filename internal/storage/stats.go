@@ -173,7 +173,7 @@ func (m *MetadataStore) GetRecentObjects(limit int) ([]Object, error) {
 func (f *FileStore) GetDiskUsage() (totalSize int64, fileCount int, err error) {
 	err = filepath.Walk(f.basePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil // 忽略错误继续
+			return err
 		}
 		if !info.IsDir() {
 			totalSize += info.Size()

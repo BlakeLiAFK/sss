@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -310,7 +309,7 @@ func (h *Handler) deleteAPIKeyPermission(w http.ResponseWriter, r *http.Request,
 	if bucketName == "" {
 		// 尝试从 body 获取
 		var req DeletePermissionRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+		if err := utils.ParseJSONBody(r, &req); err == nil {
 			bucketName = req.BucketName
 		}
 	}

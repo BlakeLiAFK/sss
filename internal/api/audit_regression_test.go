@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -261,5 +263,87 @@ func TestAuditRestrictedCopyAndPresign(t *testing.T) {
 	s.ServeHTTP(w, req)
 	if w.Code != 403 {
 		t.Fatal("presigned permission revocation ignored")
+	}
+}
+
+func TestAuditMultipartOrderSizeAndPagination(t *testing.T) {
+	s, key := auditServer(t)
+	id := "abcdef987654"
+	s.metadata.CreateMultipartUpload(&storage.MultipartUpload{UploadID: id, Bucket: "audit-bucket", Key: "parts", Initiated: time.Now()})
+	for i := 1; i <= 3; i++ {
+		s.metadata.PutPart(&storage.Part{UploadID: id, PartNumber: i, Size: 5 << 20, ETag: fmt.Sprint(i), ModifiedAt: time.Now()})
+	}
+	for _, parts := range []string{`<Part><PartNumber>2</PartNumber><ETag>2</ETag></Part><Part><PartNumber>1</PartNumber><ETag>1</ETag></Part>`, `<Part><PartNumber>1</PartNumber><ETag>1</ETag></Part><Part><PartNumber>1</PartNumber><ETag>1</ETag></Part>`, ""} {
+		w := auditRequest(s, key, "POST", "/audit-bucket/parts?uploadId="+id, "<CompleteMultipartUpload>"+parts+"</CompleteMultipartUpload>", nil)
+		if w.Code != 400 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	w := auditRequest(s, key, "GET", "/audit-bucket/parts?uploadId="+id+"&part-number-marker=1&max-parts=1", "", nil)
+	var result ListPartsResult
+	if err := xml.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.IsTruncated || len(result.Parts) != 1 || result.Parts[0].PartNumber != 2 || result.NextPartNumberMarker != 2 {
+		t.Fatalf("pagination %+v", result)
+	}
+	s.metadata.PutPart(&storage.Part{UploadID: id, PartNumber: 1, Size: 1, ETag: "1", ModifiedAt: time.Now()})
+	body := `<CompleteMultipartUpload><Part><PartNumber>1</PartNumber><ETag>1</ETag></Part><Part><PartNumber>2</PartNumber><ETag>2</ETag></Part></CompleteMultipartUpload>`
+	w = auditRequest(s, key, "POST", "/audit-bucket/parts?uploadId="+id, body, nil)
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "EntityTooSmall") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	s.metadata.UpdateBucketPublic("audit-bucket", true)
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, httptest.NewRequest("GET", "/audit-bucket/parts?uploadId="+id, nil))
+	if w.Code != 403 {
+		t.Fatal("public bucket exposed private multipart state")
+	}
+}
+func TestAuditAdminPresignAndRequestID(t *testing.T) {
+	s, _ := auditServer(t)
+	if _, err := s.metadata.InstallSystem("admin", "TestPassword123!", "us-east-1"); err != nil {
+		t.Fatal(err)
+	}
+	auth.ReloadAPIKeyCache()
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, httptest.NewRequest("POST", "/api/admin/login", strings.NewReader(`{"username":"admin","password":"TestPassword123!"}`)))
+	var login struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &login); err != nil || login.Token == "" {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	r := httptest.NewRequest("POST", "/api/admin/presign", strings.NewReader(`{"method":"GET","bucket":"audit-bucket","key":"key"}`))
+	r.Header.Set("X-Admin-Token", login.Token)
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	var result PresignResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil || !strings.Contains(result.URL, "example.com/") {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, httptest.NewRequest("GET", "/audit-bucket/key", nil))
+	var e struct {
+		RequestID string `xml:"RequestId"`
+	}
+	xml.Unmarshal(w.Body.Bytes(), &e)
+	if e.RequestID == "" || e.RequestID != w.Header().Get("x-amz-request-id") {
+		t.Fatal("request ID mismatch")
+	}
+}
+
+func TestAuditInvalidQueryCannotDeleteObject(t *testing.T) {
+	s, key := auditServer(t)
+	if w := auditRequest(s, key, "PUT", "/audit-bucket/keep", "original", nil); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	for _, query := range []string{"partNumber=1", "max-parts=1", "prefix=x"} {
+		if w := auditRequest(s, key, "DELETE", "/audit-bucket/keep?"+query, "", nil); w.Code != 400 {
+			t.Fatal(query, w.Code)
+		}
+	}
+	if w := auditRequest(s, key, "GET", "/audit-bucket/keep", "", nil); w.Body.String() != "original" {
+		t.Fatal("invalid query deleted object")
 	}
 }

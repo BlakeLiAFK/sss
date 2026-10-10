@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"sss/internal/config"
 	"sss/internal/storage"
 	"sss/internal/utils"
 )
@@ -295,12 +294,20 @@ func (h *Handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 
-	// 获取 API Key
-	accessKeyID, secretAccessKey := h.metadata.GetAuthConfig()
-	if accessKeyID == "" {
-		// 兼容旧配置
-		accessKeyID = config.Global.Auth.AccessKeyID
-		secretAccessKey = config.Global.Auth.SecretAccessKey
+	// Compatibility fields reflect the current managed key, never a stale secret.
+	accessKeyID, _ := h.metadata.GetSetting(storage.SettingAuthAccessKeyID)
+	secretAccessKey := ""
+	keys, err := h.metadata.ListAPIKeysWithPermissions()
+	if err == nil {
+		for _, key := range keys {
+			if key.AccessKeyID == accessKeyID && key.Enabled {
+				secretAccessKey = key.SecretAccessKey
+				break
+			}
+		}
+	}
+	if secretAccessKey == "" {
+		accessKeyID = ""
 	}
 
 	utils.WriteJSONResponse(w, AdminLoginResponse{

@@ -129,3 +129,99 @@ func TestAuditMigrationCancellationAndSnapshots(t *testing.T) {
 		t.Fatal("cancel overwritten")
 	}
 }
+
+func TestAuditCancelDuringObjectTransferPreservesOldObject(t *testing.T) {
+	manager, store, cleanup := setupMigrateManager(t)
+	defer cleanup()
+	store.CreateBucket("target")
+	old, etag, err := manager.fileStore.PutObject("target", "key", strings.NewReader("old"), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.PutObject(&Object{Bucket: "target", Key: "key", StoragePath: old, Size: 3, ETag: etag, LastModified: time.Now()})
+	started, cancelled := make(chan struct{}), make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("list-type") == "2" {
+			w.Header().Set("Content-Type", "application/xml")
+			io.WriteString(w, `<ListBucketResult><IsTruncated>false</IsTruncated><Contents><Key>key</Key><Size>4</Size></Contents></ListBucketResult>`)
+			return
+		}
+		w.Header().Set("Content-Length", "4")
+		io.WriteString(w, "p")
+		w.(http.Flusher).Flush()
+		close(started)
+		<-r.Context().Done()
+		close(cancelled)
+	}))
+	defer server.Close()
+	key, _ := store.CreateAPIKey("generated source credential")
+	id, err := manager.StartMigration(MigrateConfig{SourceEndpoint: server.URL, SourceAccessKey: key.AccessKeyID, SourceSecretKey: key.SecretAccessKey, SourceBucket: "source", TargetBucket: "target", OverwriteExist: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("transfer did not start")
+	}
+	if err := manager.CancelMigration(id); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-cancelled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("transfer not cancelled")
+	}
+	manager.fileStore.MutationMu.RLock()
+	defer manager.fileStore.MutationMu.RUnlock()
+	current, err := store.GetObject("target", "key")
+	if err != nil || current.StoragePath != old {
+		t.Fatal("cancel published object")
+	}
+	if bytes, _ := os.ReadFile(old); string(bytes) != "old" {
+		t.Fatal("old data changed")
+	}
+}
+func TestAuditMultipartColumnMigration(t *testing.T) {
+	path := t.TempDir() + "/legacy.db"
+	store, err := NewMetadataStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec("ALTER TABLE parts DROP COLUMN storage_path"); err != nil {
+		t.Fatal(err)
+	}
+	store.Close()
+	store, err = NewMetadataStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.PutPart(&Part{UploadID: "abc", PartNumber: 1, ModifiedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	parts, err := store.ListParts("abc")
+	if err != nil || len(parts) != 1 || parts[0].StoragePath != "" {
+		t.Fatal("legacy part migration failed", err)
+	}
+}
+
+func TestAuditValidateMigrationLocalS3(t *testing.T) {
+	manager, store, cleanup := setupMigrateManager(t)
+	defer cleanup()
+	key, err := store.CreateAPIKey("isolated validation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("max-keys") != "1" || r.Header.Get("Authorization") == "" {
+			t.Error("validation must issue a signed bounded listing")
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		w.Write([]byte(`<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>source</Name><KeyCount>0</KeyCount><IsTruncated>false</IsTruncated></ListBucketResult>`))
+	}))
+	defer server.Close()
+	if err := manager.ValidateMigrateConfig(MigrateConfig{SourceEndpoint: server.URL, SourceAccessKey: key.AccessKeyID, SourceSecretKey: key.SecretAccessKey, SourceBucket: "source"}); err != nil {
+		t.Fatal(err)
+	}
+}

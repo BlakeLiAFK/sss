@@ -220,7 +220,7 @@ func (s *Server) handleCopyObject(w http.ResponseWriter, r *http.Request, destBu
 	// URL解码源路径（处理中文文件名等）
 	decodedSource, err := url.PathUnescape(copySource)
 	if err != nil {
-		utils.WriteErrorResponse(w, "InvalidCopySource", "Invalid x-amz-copy-source encoding", http.StatusBadRequest)
+		utils.WriteError(w, utils.S3Error{Code: "InvalidCopySource", Message: "Invalid x-amz-copy-source encoding"}, http.StatusBadRequest, r.URL.Path)
 		return
 	}
 
@@ -228,7 +228,7 @@ func (s *Server) handleCopyObject(w http.ResponseWriter, r *http.Request, destBu
 	decodedSource = strings.TrimPrefix(decodedSource, "/")
 	parts := strings.SplitN(decodedSource, "/", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		utils.WriteErrorResponse(w, "InvalidCopySource", "Invalid x-amz-copy-source format", http.StatusBadRequest)
+		utils.WriteError(w, utils.S3Error{Code: "InvalidCopySource", Message: "Invalid x-amz-copy-source format"}, http.StatusBadRequest, r.URL.Path)
 		return
 	}
 	srcBucket := parts[0]
@@ -239,11 +239,11 @@ func (s *Server) handleCopyObject(w http.ResponseWriter, r *http.Request, destBu
 
 	// 验证路径安全性（防止路径遍历）
 	if strings.Contains(srcBucket, "..") || strings.ContainsAny(srcBucket, "/\\") {
-		utils.WriteErrorResponse(w, "InvalidCopySource", "Invalid source bucket name", http.StatusBadRequest)
+		utils.WriteError(w, utils.S3Error{Code: "InvalidCopySource", Message: "Invalid source bucket name"}, http.StatusBadRequest, r.URL.Path)
 		return
 	}
-	if strings.Contains(srcKey, "..") {
-		utils.WriteErrorResponse(w, "InvalidCopySource", "Invalid source key", http.StatusBadRequest)
+	if utils.UnsafeObjectKey(srcKey) {
+		utils.WriteError(w, utils.S3Error{Code: "InvalidCopySource", Message: "Invalid source key"}, http.StatusBadRequest, r.URL.Path)
 		return
 	}
 

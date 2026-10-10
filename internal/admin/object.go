@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"sss/internal/config"
-	"strings"
 	"time"
 
 	"sss/internal/storage"
@@ -73,7 +72,7 @@ func (h *Handler) adminDeleteObject(w http.ResponseWriter, r *http.Request, buck
 	}
 
 	// 安全检查：防止路径遍历
-	if strings.Contains(key, "..") {
+	if utils.UnsafeObjectKey(key) {
 		utils.WriteErrorResponse(w, "InvalidParameter", "Invalid key", http.StatusBadRequest)
 		return
 	}
@@ -115,7 +114,7 @@ func (h *Handler) adminUploadObject(w http.ResponseWriter, r *http.Request, buck
 	}
 
 	// 安全检查：防止路径遍历
-	if strings.Contains(key, "..") {
+	if utils.UnsafeObjectKey(key) {
 		utils.WriteErrorResponse(w, "InvalidParameter", "Invalid key", http.StatusBadRequest)
 		return
 	}
@@ -211,7 +210,7 @@ func (h *Handler) adminCopyObject(w http.ResponseWriter, r *http.Request, bucket
 	}
 
 	// 安全检查：防止路径遍历
-	if strings.Contains(req.SourceKey, "..") || strings.Contains(req.DestKey, "..") {
+	if utils.UnsafeObjectKey(req.SourceKey) || utils.UnsafeObjectKey(req.DestKey) {
 		utils.WriteErrorResponse(w, "InvalidParameter", "Invalid key", http.StatusBadRequest)
 		return
 	}
@@ -315,7 +314,7 @@ func (h *Handler) adminDownloadObject(w http.ResponseWriter, r *http.Request, bu
 	}
 
 	// 安全检查：防止路径遍历
-	if strings.Contains(key, "..") {
+	if utils.UnsafeObjectKey(key) {
 		utils.WriteErrorResponse(w, "InvalidParameter", "Invalid key", http.StatusBadRequest)
 		return
 	}

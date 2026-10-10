@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -62,7 +61,7 @@ func (h *Handler) getGeoStatsConfig(w http.ResponseWriter, r *http.Request) {
 // updateGeoStatsConfig 更新 GeoStats 配置
 func (h *Handler) updateGeoStatsConfig(w http.ResponseWriter, r *http.Request) {
 	var req GeoStatsConfigRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := utils.ParseJSONBody(r, &req); err != nil {
 		utils.WriteErrorResponse(w, "InvalidRequest", "Invalid JSON", http.StatusBadRequest)
 		return
 	}
@@ -229,6 +228,20 @@ func (h *Handler) getGeoStatsData(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) deleteGeoStatsData(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
+	if value := query.Get("all"); value != "" && value != "true" && value != "false" {
+		writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+		return
+	}
+	if value := query.Get("before_date"); value != "" {
+		if _, err := time.Parse("2006-01-02", value); err != nil {
+			writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+			return
+		}
+	}
+	if query.Get("all") == "true" && query.Get("before_date") != "" {
+		writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+		return
+	}
 	// 检查是否清空所有数据
 	if query.Get("all") == "true" {
 		if err := h.metadata.ClearGeoStats(); err != nil {

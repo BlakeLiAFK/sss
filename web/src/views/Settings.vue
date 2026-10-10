@@ -767,7 +767,8 @@ async function loadGeoStatsConfig() {
   }
 }
 
-async function handleGeoStatsToggle(enabled: boolean) {
+async function handleGeoStatsToggle(value: string | number | boolean) {
+  const enabled = value === true
   geoStatsUpdating.value = true
   try {
     await apiUpdateGeoStatsConfig({ enabled })

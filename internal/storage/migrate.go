@@ -5,7 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
+	appconfig "sss/internal/config"
 	"sync"
 	"time"
 
@@ -432,12 +435,33 @@ func (m *MigrateManager) transferObject(ctx context.Context, client *s3.Client, 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if !cfg.OverwriteExist {
+		existing, err := m.metadata.GetObject(cfg.TargetBucket, targetKey)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			return nil
+		}
+	}
+	limit := int64(5 << 30)
+	if appconfig.Global != nil && appconfig.Global.Storage.MaxObjectSize > 0 {
+		limit = appconfig.Global.Storage.MaxObjectSize
+	}
 	// 存储到本地
-	storagePath, etag, err := m.fileStore.PutObject(cfg.TargetBucket, targetKey, getResp.Body, size)
+	storagePath, etag, err := m.fileStore.PutObject(cfg.TargetBucket, targetKey, io.LimitReader(getResp.Body, limit+1), size)
 	if err != nil {
 		return fmt.Errorf("failed to store object: %w", err)
 	}
 
+	info, err := os.Stat(storagePath)
+	if err != nil || info.Size() > limit {
+		m.fileStore.DeleteObject(storagePath)
+		return fmt.Errorf("object exceeds limit or cannot be inspected")
+	}
+	size = info.Size()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		m.fileStore.DeleteObject(storagePath)
 		return err

@@ -81,7 +81,12 @@ func (h *Handler) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	installed := h.metadata.IsInstalled()
+	value, err := h.metadata.GetSetting(storage.SettingSystemInstalled)
+	if err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
+	}
+	installed := value == "true"
 	var installedAt string
 	if installed {
 		installedAt, _ = h.metadata.GetSetting(storage.SettingSystemInstalledAt)

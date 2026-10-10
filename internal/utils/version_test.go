@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"io"
+	"net/http"
 	"runtime"
 	"strings"
 	"testing"
@@ -214,5 +216,37 @@ func BenchmarkBuildDownloadURL(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		BuildDownloadURL("1.0.0", platform)
+	}
+}
+
+type auditUpdateTransport func(*http.Request) (*http.Response, error)
+
+func (f auditUpdateTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+func TestAuditUpdateSourceAndErrors(t *testing.T) {
+	old := http.DefaultTransport
+	defer func() { http.DefaultTransport = old }()
+	for _, status := range []int{200, 404, 403} {
+		http.DefaultTransport = auditUpdateTransport(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Scheme != "https" || r.URL.Host != "api.github.com" {
+				t.Fatal("unexpected update source", r.URL)
+			}
+			return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"tag_name":"v999.0.0","html_url":"https://github.com/BlakeLiAFK/sss/releases/tag/v999.0.0"}`))}, nil
+		})
+		result, err := CheckForUpdate()
+		if status == 403 {
+			if err == nil {
+				t.Fatal("upstream error ignored")
+			}
+			continue
+		}
+		if err != nil || result == nil {
+			t.Fatal(err)
+		}
+		if status == 200 && !result.HasUpdate {
+			t.Fatal("update not detected")
+		}
+		if status == 404 && result.HasUpdate {
+			t.Fatal("missing release treated as update")
+		}
 	}
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/xml"
+	"io"
 	"net/http"
 	"sss/internal/config"
 	"strconv"
@@ -188,6 +189,11 @@ func (s *Server) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	var trailing interface{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		utils.WriteError(w, utils.ErrInvalidArgument, 400, r.URL.Path)
+		return
+	}
 	// 获取已上传的分片
 	dbParts, err := s.metadata.ListParts(uploadID)
 	if err != nil {
@@ -249,6 +255,12 @@ func (s *Server) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	if totalSize != sum || (config.Global.Storage.MaxObjectSize > 0 && totalSize > config.Global.Storage.MaxObjectSize) {
+		s.filestore.DeleteObject(storagePath)
+		utils.WriteError(w, utils.ErrInvalidPart, 400, r.URL.Path)
+		return
+	}
+
 	// 保存对象元数据
 	obj := &storage.Object{
 		Key:          key,
@@ -267,10 +279,9 @@ func (s *Server) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	s.filestore.AbortMultipartUpload(uploadID)
-	// 清理多段上传记录
-	s.metadata.DeleteParts(uploadID)
-	s.metadata.DeleteMultipartUpload(uploadID)
+	if err := s.filestore.AbortMultipartUpload(uploadID); err != nil {
+		utils.Warn("defer multipart file cleanup to GC", "error", err)
+	}
 
 	result := CompleteMultipartUploadResult{
 		Xmlns:    "http://s3.amazonaws.com/doc/2006-03-01/",
@@ -297,15 +308,15 @@ func (s *Server) handleAbortMultipartUpload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// 清理分片文件
-	if err := s.filestore.AbortMultipartUpload(uploadID); err != nil {
-		utils.Warn("abort multipart upload files failed", "error", err)
+	// Remove the namespace transactionally before reclaiming unreferenced files.
+	if err := s.metadata.AbortMultipart(uploadID); err != nil {
+		utils.WriteError(w, utils.ErrInternalError, 500, r.URL.Path)
+		return
 	}
-
-	// 清理元数据
-	s.metadata.DeleteParts(uploadID)
-	s.metadata.DeleteMultipartUpload(uploadID)
-
+	if err := s.filestore.AbortMultipartUpload(uploadID); err != nil {
+		utils.WriteError(w, utils.ErrInternalError, 500, r.URL.Path)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

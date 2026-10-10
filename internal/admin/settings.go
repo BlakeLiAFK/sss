@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/netip"
@@ -129,7 +128,7 @@ type UpdateSettingsRequest struct {
 // updateSettings 更新系统设置
 func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 	var req UpdateSettingsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := utils.ParseJSONBody(r, &req); err != nil {
 		utils.WriteErrorResponse(w, "InvalidRequest", "Invalid JSON", http.StatusBadRequest)
 		return
 	}
@@ -220,7 +219,7 @@ func (h *Handler) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		OldPassword string `json:"old_password"`
 		NewPassword string `json:"new_password"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := utils.ParseJSONBody(r, &req); err != nil {
 		utils.WriteErrorResponse(w, "InvalidRequest", "Invalid JSON", http.StatusBadRequest)
 		return
 	}

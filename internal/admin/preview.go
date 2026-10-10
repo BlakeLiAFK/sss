@@ -87,7 +87,7 @@ func (h *Handler) previewObject(w http.ResponseWriter, r *http.Request, bucketNa
 	}
 
 	// 安全检查：防止路径遍历
-	if strings.Contains(key, "..") {
+	if utils.UnsafeObjectKey(key) {
 		utils.WriteErrorResponse(w, "InvalidParameter", "Invalid key", http.StatusBadRequest)
 		return
 	}

@@ -9,6 +9,7 @@ import (
 	"sss/internal/config"
 	"sss/internal/utils"
 	"strconv"
+	"strings"
 )
 
 type stagedBody struct{ *os.File }
@@ -28,6 +29,10 @@ func verifyPayload(w http.ResponseWriter, r *http.Request) bool {
 		if n > 0 && n < limit {
 			limit = n
 		}
+	}
+	// Control documents have their own limit, independent of object byte limits.
+	if r.Method != http.MethodPut || strings.HasPrefix(r.URL.Path, "/api/") || r.Header.Get("X-Amz-Copy-Source") != "" {
+		limit = 10 << 20
 	}
 	if value := r.URL.Query().Get("X-Amz-Max-Content-Length"); value != "" {
 		n, err := strconv.ParseInt(value, 10, 64)

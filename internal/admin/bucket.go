@@ -73,7 +73,7 @@ func (h *Handler) adminCreateBucket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 验证桶名
-	if strings.Contains(req.Name, "..") || strings.ContainsAny(req.Name, "/\\") {
+	if !utils.ValidBucketName(req.Name) {
 		utils.WriteErrorResponse(w, "InvalidBucketName", "Invalid bucket name", http.StatusBadRequest)
 		return
 	}
@@ -193,8 +193,7 @@ func (h *Handler) adminDeleteBucket(w http.ResponseWriter, r *http.Request, buck
 		return
 	}
 
-	// 删除存储目录
-	h.filestore.DeleteBucket(bucketName)
+	// Physical data reclamation is deferred to GC.
 
 	// 记录审计日志
 	h.Audit(r, storage.AuditActionBucketDelete, "admin", bucketName, true, nil)
