@@ -12,15 +12,15 @@ import (
 
 // MetadataStore SQLite元数据存储
 type MetadataStore struct {
-	db    *sql.DB
-	wmu   sync.Mutex // 写操作互斥锁，确保写入串行化
+	db  *sql.DB
+	wmu sync.Mutex // 写操作互斥锁，确保写入串行化
 }
 
 // NewMetadataStore 创建元数据存储
 func NewMetadataStore(dbPath string) (*MetadataStore, error) {
 	// modernc.org/sqlite 使用不同的参数格式
 	// 使用 WAL 模式提升并发性能，设置 busy_timeout 避免锁等待
-	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_pragma=cache_size(2000)")
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(FULL)&_pragma=cache_size(2000)")
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +141,15 @@ func (m *MetadataStore) initTables() error {
 		}
 	}
 
+	var partPathExists bool
+	if err := m.db.QueryRow("SELECT COUNT(*)>0 FROM pragma_table_info('parts') WHERE name='storage_path'").Scan(&partPathExists); err != nil {
+		return err
+	}
+	if !partPathExists {
+		if _, err := m.db.Exec("ALTER TABLE parts ADD COLUMN storage_path TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+	}
 	// 初始化审计日志表
 	if err := m.initAuditTable(); err != nil {
 		return fmt.Errorf("init audit table failed: %v", err)
@@ -191,7 +200,7 @@ func (m *MetadataStore) DeleteBucket(name string) error {
 
 	// 检查是否有对象
 	var count int
-	if err := tx.QueryRow("SELECT COUNT(*) FROM objects WHERE bucket = ?", name).Scan(&count); err != nil {
+	if err := tx.QueryRow("SELECT (SELECT COUNT(*) FROM objects WHERE bucket = ?) + (SELECT COUNT(*) FROM multipart_uploads WHERE bucket = ?)", name, name).Scan(&count); err != nil {
 		return err
 	}
 	if count > 0 {
@@ -287,61 +296,51 @@ func (m *MetadataStore) ListObjects(bucket, prefix, marker, delimiter string, ma
 		MaxKeys:   maxKeys,
 	}
 
-	query := "SELECT bucket, key, size, etag, content_type, last_modified, storage_path FROM objects WHERE bucket = ?"
-	args := []interface{}{bucket}
-
-	if prefix != "" {
-		query += " AND key LIKE ?"
-		args = append(args, prefix+"%")
+	if maxKeys <= 0 {
+		return result, nil
 	}
-	if marker != "" {
-		query += " AND key > ?"
-		args = append(args, marker)
+	if maxKeys > 1000 {
+		maxKeys = 1000
+		result.MaxKeys = maxKeys
 	}
-
-	query += " ORDER BY key LIMIT ?"
-	args = append(args, maxKeys+1)
-
-	rows, err := m.db.Query(query, args...)
+	// Stream sorted rows and limit logical objects/prefixes, not raw rows.
+	rows, err := m.db.Query("SELECT bucket,key,size,etag,content_type,last_modified,storage_path FROM objects WHERE bucket=? AND substr(key,1,length(?))=? AND key>? ORDER BY key", bucket, prefix, prefix, marker)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
-	prefixSet := make(map[string]bool)
+	previousPrefix := ""
 	for rows.Next() {
 		var obj Object
 		if err := rows.Scan(&obj.Bucket, &obj.Key, &obj.Size, &obj.ETag, &obj.ContentType, &obj.LastModified, &obj.StoragePath); err != nil {
 			return nil, err
 		}
-
-		// 处理分隔符
-		if delimiter != "" && prefix != "" {
+		entry := obj.Key
+		isPrefix := false
+		if delimiter != "" {
 			rest := strings.TrimPrefix(obj.Key, prefix)
-			if idx := strings.Index(rest, delimiter); idx >= 0 {
-				commonPrefix := prefix + rest[:idx+1]
-				if !prefixSet[commonPrefix] {
-					prefixSet[commonPrefix] = true
-					result.CommonPrefixes = append(result.CommonPrefixes, commonPrefix)
-				}
-				continue
+			if i := strings.Index(rest, delimiter); i >= 0 {
+				entry = prefix + rest[:i+len(delimiter)]
+				isPrefix = true
 			}
 		}
-
-		if len(result.Contents) < maxKeys {
-			result.Contents = append(result.Contents, obj)
-		} else {
+		if entry <= marker || (isPrefix && entry == previousPrefix) {
+			continue
+		}
+		if result.KeyCount == maxKeys {
 			result.IsTruncated = true
 			break
 		}
+		if isPrefix {
+			result.CommonPrefixes = append(result.CommonPrefixes, entry)
+			previousPrefix = entry
+		} else {
+			result.Contents = append(result.Contents, obj)
+		}
+		result.NextMarker = entry
+		result.KeyCount++
 	}
-
-	if len(result.Contents) > 0 {
-		result.NextMarker = result.Contents[len(result.Contents)-1].Key
-	}
-	result.KeyCount = len(result.Contents)
-
-	return result, nil
+	return result, rows.Err()
 }
 
 // === Multipart Upload 操作 ===
@@ -379,9 +378,9 @@ func (m *MetadataStore) DeleteMultipartUpload(uploadID string) error {
 func (m *MetadataStore) PutPart(part *Part) error {
 	return m.withWriteLock(func() error {
 		_, err := m.db.Exec(`
-			INSERT OR REPLACE INTO parts (upload_id, part_number, size, etag, modified_at)
-			VALUES (?, ?, ?, ?, ?)`,
-			part.UploadID, part.PartNumber, part.Size, part.ETag, part.ModifiedAt,
+			INSERT OR REPLACE INTO parts (upload_id, part_number, size, etag, modified_at,storage_path)
+			VALUES (?, ?, ?, ?, ?,?)`,
+			part.UploadID, part.PartNumber, part.Size, part.ETag, part.ModifiedAt, part.StoragePath,
 		)
 		return err
 	})
@@ -389,7 +388,7 @@ func (m *MetadataStore) PutPart(part *Part) error {
 
 func (m *MetadataStore) ListParts(uploadID string) ([]Part, error) {
 	rows, err := m.db.Query(`
-		SELECT upload_id, part_number, size, etag, modified_at
+		SELECT upload_id, part_number, size, etag, modified_at,storage_path
 		FROM parts WHERE upload_id = ? ORDER BY part_number`, uploadID,
 	)
 	if err != nil {
@@ -400,7 +399,7 @@ func (m *MetadataStore) ListParts(uploadID string) ([]Part, error) {
 	var parts []Part
 	for rows.Next() {
 		var p Part
-		if err := rows.Scan(&p.UploadID, &p.PartNumber, &p.Size, &p.ETag, &p.ModifiedAt); err != nil {
+		if err := rows.Scan(&p.UploadID, &p.PartNumber, &p.Size, &p.ETag, &p.ModifiedAt, &p.StoragePath); err != nil {
 			return nil, err
 		}
 		parts = append(parts, p)
@@ -455,4 +454,24 @@ func (m *MetadataStore) SearchObjects(bucket, keyword string, maxResults int) ([
 		objects = append(objects, obj)
 	}
 	return objects, nil
+}
+
+func (m *MetadataStore) CompleteMultipart(obj *Object, uploadID string) error {
+	return m.withWriteLock(func() error {
+		tx, err := m.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err := tx.Exec("INSERT OR REPLACE INTO objects(bucket,key,size,etag,content_type,last_modified,storage_path) VALUES(?,?,?,?,?,?,?)", obj.Bucket, obj.Key, obj.Size, obj.ETag, obj.ContentType, obj.LastModified, obj.StoragePath); err != nil {
+			return err
+		}
+		if _, err := tx.Exec("DELETE FROM parts WHERE upload_id=?", uploadID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec("DELETE FROM multipart_uploads WHERE upload_id=?", uploadID); err != nil {
+			return err
+		}
+		return tx.Commit()
+	})
 }

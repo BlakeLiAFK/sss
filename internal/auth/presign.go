@@ -14,8 +14,9 @@ import (
 
 // PresignOptions 预签名URL选项
 type PresignOptions struct {
-	MaxContentLength int64     // 最大内容长度（字节），0表示不限制
-	ContentType      string    // 限制内容类型
+	Host             string
+	MaxContentLength int64         // 最大内容长度（字节），0表示不限制
+	ContentType      string        // 限制内容类型
 	Expires          time.Duration // 过期时间
 }
 
@@ -28,6 +29,10 @@ func GeneratePresignedURL(method, bucket, key string, expires time.Duration) str
 
 // GeneratePresignedURLWithOptions 生成带选项的预签名 URL
 func GeneratePresignedURLWithOptions(method, bucket, key string, opts *PresignOptions) string {
+	return GeneratePresignedURLForKey(method, bucket, key, opts, config.Global.Auth.AccessKeyID)
+}
+
+func GeneratePresignedURLForKey(method, bucket, key string, opts *PresignOptions, accessKey string) string {
 	cfg := config.Global
 
 	// 构建 URL
@@ -36,14 +41,17 @@ func GeneratePresignedURLWithOptions(method, bucket, key string, opts *PresignOp
 		host = fmt.Sprintf("localhost:%d", cfg.Server.Port)
 	}
 
-	path := fmt.Sprintf("/%s/%s", bucket, key)
+	if opts.Host != "" {
+		host = opts.Host
+	}
+	path := getCanonicalURI(fmt.Sprintf("/%s/%s", bucket, key))
 
 	now := time.Now().UTC()
 	dateStr := now.Format("20060102")
 	amzDate := now.Format("20060102T150405Z")
 
 	credential := fmt.Sprintf("%s/%s/%s/s3/aws4_request",
-		cfg.Auth.AccessKeyID, dateStr, cfg.Server.Region)
+		accessKey, dateStr, cfg.Server.Region)
 
 	// 构建查询参数
 	params := url.Values{
@@ -74,9 +82,6 @@ func GeneratePresignedURLWithOptions(method, bucket, key string, opts *PresignOp
 
 	// 构建签名头
 	signedHeaders := "host"
-	if opts.ContentType != "" {
-		signedHeaders = "host;content-type"
-	}
 
 	// 规范请求
 	canonicalHeaders := fmt.Sprintf("host:%s\n", host)
@@ -100,7 +105,7 @@ func GeneratePresignedURLWithOptions(method, bucket, key string, opts *PresignOp
 	)
 
 	// 计算签名
-	signingKey := deriveSigningKey(cfg.Auth.SecretAccessKey, dateStr, cfg.Server.Region)
+	signingKey := deriveSigningKey(getSecretKey(accessKey), dateStr, cfg.Server.Region)
 	signature := hex.EncodeToString(hmacSHA256(signingKey, []byte(stringToSign)))
 
 	// 构建最终 URL（使用可配置的协议）
@@ -122,7 +127,7 @@ func getCanonicalQueryStringForPresign(params url.Values) string {
 	var pairs []string
 	for _, k := range keys {
 		for _, v := range params[k] {
-			pairs = append(pairs, fmt.Sprintf("%s=%s", url.QueryEscape(k), url.QueryEscape(v)))
+			pairs = append(pairs, fmt.Sprintf("%s=%s", awsEscape(k), awsEscape(v)))
 		}
 	}
 	return strings.Join(pairs, "&")

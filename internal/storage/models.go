@@ -6,7 +6,7 @@ import "time"
 type Bucket struct {
 	Name         string    `json:"name"`
 	CreationDate time.Time `json:"creation_date"`
-	IsPublic     bool      `json:"is_public"`     // 是否为公有桶
+	IsPublic     bool      `json:"is_public"` // 是否为公有桶
 }
 
 // Object 对象模型
@@ -31,27 +31,28 @@ type MultipartUpload struct {
 
 // Part 上传分片模型
 type Part struct {
-	UploadID   string    `json:"upload_id"`
-	PartNumber int       `json:"part_number"`
-	Size       int64     `json:"size"`
-	ETag       string    `json:"etag"`
-	ModifiedAt time.Time `json:"modified_at"`
+	StoragePath string    `json:"-"`
+	UploadID    string    `json:"upload_id"`
+	PartNumber  int       `json:"part_number"`
+	Size        int64     `json:"size"`
+	ETag        string    `json:"etag"`
+	ModifiedAt  time.Time `json:"modified_at"`
 }
 
 // ListObjectsResult ListObjects返回结果
 type ListObjectsResult struct {
-	IsTruncated        bool      `xml:"IsTruncated"`
-	Contents           []Object  `xml:"Contents"`
-	Name               string    `xml:"Name"`
-	Prefix             string    `xml:"Prefix"`
-	Delimiter          string    `xml:"Delimiter"`
-	MaxKeys            int       `xml:"MaxKeys"`
-	CommonPrefixes     []string  `xml:"CommonPrefixes>Prefix"`
-	EncodingType       string    `xml:"EncodingType,omitempty"`
-	KeyCount           int       `xml:"KeyCount,omitempty"`
-	ContinuationToken  string    `xml:"ContinuationToken,omitempty"`
-	NextContinuationToken string `xml:"NextContinuationToken,omitempty"`
-	StartAfter         string    `xml:"StartAfter,omitempty"`
-	Marker             string    `xml:"Marker,omitempty"`
-	NextMarker         string    `xml:"NextMarker,omitempty"`
+	IsTruncated           bool     `xml:"IsTruncated"`
+	Contents              []Object `xml:"Contents"`
+	Name                  string   `xml:"Name"`
+	Prefix                string   `xml:"Prefix"`
+	Delimiter             string   `xml:"Delimiter"`
+	MaxKeys               int      `xml:"MaxKeys"`
+	CommonPrefixes        []string `xml:"CommonPrefixes>Prefix"`
+	EncodingType          string   `xml:"EncodingType,omitempty"`
+	KeyCount              int      `xml:"KeyCount,omitempty"`
+	ContinuationToken     string   `xml:"ContinuationToken,omitempty"`
+	NextContinuationToken string   `xml:"NextContinuationToken,omitempty"`
+	StartAfter            string   `xml:"StartAfter,omitempty"`
+	Marker                string   `xml:"Marker,omitempty"`
+	NextMarker            string   `xml:"NextMarker,omitempty"`
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -61,7 +62,7 @@ func (h *Handler) handleSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		h.updateSettings(w, r)
 	default:
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 	}
 }
 
@@ -133,74 +134,74 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 更新 S3 区域
-	if req.Region != nil && *req.Region != "" {
-		if err := h.metadata.SetSetting(storage.SettingServerRegion, *req.Region); err != nil {
-			utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
+	values := map[string]string{}
+	if req.Region != nil {
+		if strings.TrimSpace(*req.Region) == "" {
+			writeAdminError(w, utils.ErrInvalidArgument, 400, "")
 			return
 		}
+		values[storage.SettingServerRegion] = *req.Region
+	}
+	for key, n := range map[string]*int64{storage.SettingStorageMaxObjectSize: req.MaxObjectSize, storage.SettingStorageMaxUploadSize: req.MaxUploadSize} {
+		if n != nil {
+			if *n <= 0 || *n > 5<<30 {
+				writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+				return
+			}
+			values[key] = strconv.FormatInt(*n, 10)
+		}
+	}
+	if req.PresignScheme != nil {
+		if *req.PresignScheme != "http" && *req.PresignScheme != "https" {
+			writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+			return
+		}
+		values[storage.SettingSecurityPresignScheme] = *req.PresignScheme
+	}
+	if req.CORSOrigin != nil {
+		if strings.ContainsAny(*req.CORSOrigin, "\r\n") {
+			writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+			return
+		}
+		values[storage.SettingSecurityCORSOrigin] = *req.CORSOrigin
+	}
+	if req.TrustedProxies != nil {
+		for _, cidr := range strings.Split(*req.TrustedProxies, ",") {
+			cidr = strings.TrimSpace(cidr)
+			if cidr != "" {
+				if _, err := netip.ParsePrefix(cidr); err != nil {
+					if _, err := netip.ParseAddr(cidr); err != nil {
+						writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+						return
+					}
+				}
+			}
+		}
+		values[storage.SettingSecurityTrustedProxies] = *req.TrustedProxies
+	}
+	if err := h.metadata.SetSettings(values); err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
+	}
+	if req.Region != nil {
 		config.Global.Server.Region = *req.Region
 	}
-
-	// 更新最大对象大小
-	if req.MaxObjectSize != nil && *req.MaxObjectSize > 0 {
-		if err := h.metadata.SetSetting(storage.SettingStorageMaxObjectSize, strconv.FormatInt(*req.MaxObjectSize, 10)); err != nil {
-			utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
-			return
-		}
+	if req.MaxObjectSize != nil {
 		config.Global.Storage.MaxObjectSize = *req.MaxObjectSize
 	}
-
-	// 更新最大上传大小
-	if req.MaxUploadSize != nil && *req.MaxUploadSize > 0 {
-		if err := h.metadata.SetSetting(storage.SettingStorageMaxUploadSize, strconv.FormatInt(*req.MaxUploadSize, 10)); err != nil {
-			utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
-			return
-		}
+	if req.MaxUploadSize != nil {
 		config.Global.Storage.MaxUploadSize = *req.MaxUploadSize
 	}
-
-	// 更新 CORS 来源
+	if req.PresignScheme != nil {
+		config.Global.Security.PresignScheme = *req.PresignScheme
+	}
 	if req.CORSOrigin != nil {
-		// 允许设置为空（将使用默认值 "*"），或设置为具体值
-		corsOrigin := *req.CORSOrigin
-		if corsOrigin == "" {
-			corsOrigin = "*"
-		}
-		if err := h.metadata.SetSetting(storage.SettingSecurityCORSOrigin, corsOrigin); err != nil {
-			utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
-			return
-		}
-		config.Global.Security.CORSOrigin = corsOrigin
+		config.Global.Security.CORSOrigin = *req.CORSOrigin
 	}
-
-	// 更新预签名URL协议
-	if req.PresignScheme != nil && *req.PresignScheme != "" {
-		scheme := *req.PresignScheme
-		// 验证协议值
-		if scheme != "http" && scheme != "https" {
-			utils.WriteErrorResponse(w, "InvalidParameter", "presign_scheme 必须是 'http' 或 'https'", http.StatusBadRequest)
-			return
-		}
-		if err := h.metadata.SetSetting(storage.SettingSecurityPresignScheme, scheme); err != nil {
-			utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
-			return
-		}
-		config.Global.Security.PresignScheme = scheme
-	}
-
-	// 更新信任代理 IP
 	if req.TrustedProxies != nil {
-		trustedProxies := strings.TrimSpace(*req.TrustedProxies)
-		if err := h.metadata.SetSetting(storage.SettingSecurityTrustedProxies, trustedProxies); err != nil {
-			utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
-			return
-		}
-		config.Global.Security.TrustedProxies = trustedProxies
-		// 热更新信任代理缓存
-		utils.ReloadTrustedProxies(trustedProxies)
+		config.Global.Security.TrustedProxies = *req.TrustedProxies
+		utils.ReloadTrustedProxies(*req.TrustedProxies)
 	}
-
 	// 记录审计日志
 	h.Audit(r, storage.AuditActionSettingsUpdate, "admin", "system", true, "更新系统设置")
 
@@ -211,7 +212,7 @@ func (h *Handler) updateSettings(w http.ResponseWriter, r *http.Request) {
 // handleChangePassword 修改管理员密码
 func (h *Handler) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
@@ -225,8 +226,7 @@ func (h *Handler) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 验证必填字段
-	req.OldPassword = strings.TrimSpace(req.OldPassword)
-	req.NewPassword = strings.TrimSpace(req.NewPassword)
+
 	if req.OldPassword == "" || req.NewPassword == "" {
 		utils.WriteErrorResponse(w, "InvalidRequest", "密码不能为空", http.StatusBadRequest)
 		return
@@ -251,6 +251,9 @@ func (h *Handler) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sessionStore.mu.Lock()
+	sessionStore.sessions = make(map[string]*Session)
+	sessionStore.mu.Unlock()
 	// 记录审计日志
 	h.Audit(r, storage.AuditActionPasswordChange, "admin", "system", true, "管理员密码已更改")
 
@@ -270,7 +273,7 @@ func (h *Handler) handleGeoIP(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		h.deleteGeoIP(w, r)
 	default:
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 	}
 }
 
@@ -323,13 +326,14 @@ func (h *Handler) uploadGeoIP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 先保存到临时文件
-	tempPath := geoIPPath + ".tmp"
-	outFile, err := os.Create(tempPath)
+	outFile, err := os.CreateTemp(geoIPDir, ".geoip-*")
 	if err != nil {
 		utils.WriteErrorResponse(w, "InternalError", "创建文件失败", http.StatusInternalServerError)
 		return
 	}
 
+	tempPath := outFile.Name()
+	defer os.Remove(tempPath)
 	_, err = io.Copy(outFile, file)
 	outFile.Close()
 	if err != nil {
@@ -338,25 +342,10 @@ func (h *Handler) uploadGeoIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 尝试加载验证
-	geoIP := utils.GetGeoIPService()
-	if err := geoIP.Load(tempPath); err != nil {
-		os.Remove(tempPath)
-		utils.WriteErrorResponse(w, "InvalidRequest", "无效的 GeoIP 数据库: "+err.Error(), http.StatusBadRequest)
+	if err := utils.GetGeoIPService().Replace(tempPath, geoIPPath); err != nil {
+		utils.WriteErrorResponse(w, "InvalidRequest", "Invalid database or replacement failed", 400)
 		return
 	}
-
-	// 验证通过，移动到正式位置
-	os.Remove(geoIPPath) // 删除旧文件（如果存在）
-	if err := os.Rename(tempPath, geoIPPath); err != nil {
-		os.Remove(tempPath)
-		utils.WriteErrorResponse(w, "InternalError", "移动文件失败", http.StatusInternalServerError)
-		return
-	}
-
-	// 重新加载正式文件
-	geoIP.Load(geoIPPath)
-
 	// 记录审计日志
 	h.Audit(r, storage.AuditActionSettingsUpdate, "admin", "geoip", true, "上传 GeoIP 数据库")
 
@@ -372,7 +361,6 @@ func (h *Handler) deleteGeoIP(w http.ResponseWriter, r *http.Request) {
 
 	// 关闭并禁用 GeoIP 服务
 	geoIP := utils.GetGeoIPService()
-	geoIP.Close()
 
 	// 删除文件
 	if err := os.Remove(geoIPPath); err != nil && !os.IsNotExist(err) {
@@ -380,6 +368,7 @@ func (h *Handler) deleteGeoIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	geoIP.Close()
 	// 记录审计日志
 	h.Audit(r, storage.AuditActionSettingsUpdate, "admin", "geoip", true, "删除 GeoIP 数据库")
 
@@ -392,7 +381,7 @@ func (h *Handler) deleteGeoIP(w http.ResponseWriter, r *http.Request) {
 // handleCheckUpdate 检查版本更新
 func (h *Handler) handleCheckUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 

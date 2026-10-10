@@ -15,8 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3Types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 
-	appconfig "sss/internal/config"
 	"sss/internal/auth"
+	appconfig "sss/internal/config"
 	"sss/internal/storage"
 	"sss/internal/utils"
 )
@@ -64,6 +64,9 @@ func setupAWSSDKTest(t *testing.T) (*httptest.Server, func()) {
 	}
 
 	// 初始化API Key缓存
+	if err := metadata.ImportLegacyAPIKey(appconfig.Global.Auth.AccessKeyID, appconfig.Global.Auth.SecretAccessKey); err != nil {
+		t.Fatal(err)
+	}
 	auth.InitAPIKeyCache(metadata)
 
 	// 创建服务器

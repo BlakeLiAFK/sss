@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // 安全错误定义
@@ -19,7 +20,8 @@ var (
 
 // FileStore 文件系统存储
 type FileStore struct {
-	basePath string
+	basePath   string
+	MutationMu sync.RWMutex
 }
 
 // NewFileStore 创建文件存储
@@ -148,10 +150,11 @@ func (f *FileStore) PutObject(bucket, key string, reader io.Reader, size int64) 
 		return "", "", err
 	}
 
-	file, err := os.Create(path)
+	file, err := os.CreateTemp(filepath.Dir(path), ".blob-*")
 	if err != nil {
 		return "", "", err
 	}
+	path = file.Name()
 	defer file.Close()
 
 	// 同时计算 MD5
@@ -169,6 +172,10 @@ func (f *FileStore) PutObject(bucket, key string, reader io.Reader, size int64) 
 		return "", "", err
 	}
 
+	if err := syncDirectory(filepath.Dir(path)); err != nil {
+		os.Remove(path)
+		return "", "", err
+	}
 	etag := hex.EncodeToString(hash.Sum(nil))
 	return path, etag, nil
 }
@@ -242,95 +249,95 @@ func (f *FileStore) CopyObject(srcStoragePath, destBucket, destKey string) (stri
 	}
 	defer srcFile.Close()
 
-	// 获取目标路径
-	destPath, err := f.getPath(destBucket, destKey)
-	if err != nil {
-		return "", "", err
-	}
-
-	// 确保目标目录存在
-	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-		return "", "", err
-	}
-
-	// 创建目标文件
-	destFile, err := os.Create(destPath)
-	if err != nil {
-		return "", "", err
-	}
-	defer destFile.Close()
-
-	// 同时计算 MD5
-	hash := md5.New()
-	writer := io.MultiWriter(destFile, hash)
-
-	if _, err := io.Copy(writer, srcFile); err != nil {
-		os.Remove(destPath)
-		return "", "", err
-	}
-
-	// 确保数据写入磁盘
-	if err := destFile.Sync(); err != nil {
-		os.Remove(destPath)
-		return "", "", err
-	}
-
-	etag := hex.EncodeToString(hash.Sum(nil))
-	return destPath, etag, nil
+	return f.PutObject(destBucket, destKey, srcFile, -1)
 }
 
 // PutPart 存储分片
-func (f *FileStore) PutPart(uploadID string, partNumber int, reader io.Reader) (string, int64, error) {
+
+func (f *FileStore) StorePart(uploadID string, partNumber int, reader io.Reader) (string, string, int64, error) {
 	path, err := f.getPartPath(uploadID, partNumber)
 	if err != nil {
-		return "", 0, err
+		return "", "", 0, err
 	}
-
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return "", 0, err
+		return "", "", 0, err
 	}
-
-	file, err := os.Create(path)
+	file, err := os.CreateTemp(filepath.Dir(path), ".part-*")
 	if err != nil {
-		return "", 0, err
+		return "", "", 0, err
 	}
-	defer file.Close()
-
+	success := false
+	defer func() {
+		file.Close()
+		if !success {
+			os.Remove(file.Name())
+		}
+	}()
 	hash := md5.New()
-	writer := io.MultiWriter(file, hash)
-
-	size, err := io.Copy(writer, reader)
+	size, err := io.Copy(io.MultiWriter(file, hash), reader)
 	if err != nil {
-		os.Remove(path)
-		return "", 0, err
+		return "", "", 0, err
 	}
-
-	// 确保数据写入磁盘
 	if err := file.Sync(); err != nil {
-		os.Remove(path)
+		return "", "", 0, err
+	}
+	if err := syncDirectory(filepath.Dir(path)); err != nil {
+		return "", "", 0, err
+	}
+	success = true
+	return file.Name(), hex.EncodeToString(hash.Sum(nil)), size, nil
+}
+
+// PutPart retains the internal legacy helper while making failed writes harmless.
+func (f *FileStore) PutPart(uploadID string, partNumber int, reader io.Reader) (string, int64, error) {
+	temp, etag, size, err := f.StorePart(uploadID, partNumber, reader)
+	if err != nil {
 		return "", 0, err
 	}
-
-	etag := hex.EncodeToString(hash.Sum(nil))
+	path, _ := f.getPartPath(uploadID, partNumber)
+	if err := os.Rename(temp, path); err != nil {
+		os.Remove(temp)
+		return "", 0, err
+	}
 	return etag, size, nil
 }
 
 // MergeParts 合并分片
-func (f *FileStore) MergeParts(bucket, key, uploadID string, partNumbers []int) (string, int64, error) {
+func (f *FileStore) MergeParts(bucket, key, uploadID string, partNumbers []int) (string, string, int64, error) {
+	return f.mergeParts(bucket, key, uploadID, partNumbers, nil)
+}
+
+func (f *FileStore) MergeStoredParts(bucket, key, uploadID string, parts []Part) (string, string, int64, error) {
+	numbers := make([]int, len(parts))
+	paths := make(map[int]string)
+	for i, p := range parts {
+		numbers[i] = p.PartNumber
+		paths[p.PartNumber] = p.StoragePath
+	}
+	return f.mergeParts(bucket, key, uploadID, numbers, paths)
+}
+func (f *FileStore) mergeParts(bucket, key, uploadID string, partNumbers []int, paths map[int]string) (string, string, int64, error) {
 	path, err := f.getPath(bucket, key)
 	if err != nil {
-		return "", 0, err
+		return "", "", 0, err
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return "", 0, err
+		return "", "", 0, err
 	}
 
-	outFile, err := os.Create(path)
+	outFile, err := os.CreateTemp(filepath.Dir(path), ".blob-*")
 	if err != nil {
-		return "", 0, err
+		return "", "", 0, err
 	}
-	defer outFile.Close()
+	path = outFile.Name()
+	success := false
+	defer func() {
+		outFile.Close()
+		if !success {
+			os.Remove(path)
+		}
+	}()
 
 	hash := md5.New()
 	writer := io.MultiWriter(outFile, hash)
@@ -339,31 +346,37 @@ func (f *FileStore) MergeParts(bucket, key, uploadID string, partNumbers []int) 
 	for _, partNum := range partNumbers {
 		partPath, err := f.getPartPath(uploadID, partNum)
 		if err != nil {
-			return "", 0, err
+			return "", "", 0, err
 		}
-		partFile, err := os.Open(partPath)
+		if stored := paths[partNum]; stored != "" {
+			partPath = stored
+		}
+		partFile, err := f.GetObject(partPath)
 		if err != nil {
-			return "", 0, err
+			return "", "", 0, err
 		}
 
 		n, err := io.Copy(writer, partFile)
 		partFile.Close()
 		if err != nil {
-			return "", 0, err
+			return "", "", 0, err
 		}
 		totalSize += n
 	}
 
 	// 确保数据写入磁盘
 	if err := outFile.Sync(); err != nil {
-		return "", 0, err
+		return "", "", 0, err
 	}
 
-	// 清理分片目录
-	os.RemoveAll(filepath.Join(f.basePath, ".multipart", uploadID))
+	// Parts stay intact until metadata has committed.
 
 	etag := hex.EncodeToString(hash.Sum(nil))
-	return etag, totalSize, nil
+	if err := syncDirectory(filepath.Dir(path)); err != nil {
+		return "", "", 0, err
+	}
+	success = true
+	return path, etag, totalSize, nil
 }
 
 // AbortMultipartUpload 清理分片
@@ -384,4 +397,13 @@ func (f *FileStore) GetStoragePath(bucket, key string) string {
 		return ""
 	}
 	return path
+}
+
+func syncDirectory(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }

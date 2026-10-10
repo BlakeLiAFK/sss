@@ -38,7 +38,7 @@ func (h *Handler) handleGeoStatsConfig(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		h.updateGeoStatsConfig(w, r)
 	default:
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 	}
 }
 
@@ -74,70 +74,48 @@ func (h *Handler) updateGeoStatsConfig(w http.ResponseWriter, r *http.Request) {
 	// 检查 GeoIP 依赖
 	geoIPEnabled := utils.GetGeoIPService().IsEnabled()
 
-	// 更新启用状态
+	values := map[string]string{}
 	if req.Enabled != nil {
-		// 如果要启用 GeoStats，必须先启用 GeoIP
 		if *req.Enabled && !geoIPEnabled {
-			utils.WriteErrorResponse(w, "DependencyError", "GeoStats requires GeoIP to be enabled first", http.StatusBadRequest)
+			writeAdminError(w, utils.ErrInvalidArgument, 400, "")
 			return
 		}
 		cfg.Enabled = *req.Enabled
-		enabledStr := "false"
-		if cfg.Enabled {
-			enabledStr = "true"
-		}
-		if err := h.metadata.SetSetting(storage.SettingGeoStatsEnabled, enabledStr); err != nil {
-			utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
-			return
-		}
-		config.Global.GeoStats.Enabled = cfg.Enabled
+		values[storage.SettingGeoStatsEnabled] = strconv.FormatBool(*req.Enabled)
 	}
-
-	// 更新写入模式
-	if req.Mode != nil && *req.Mode != "" {
-		mode := *req.Mode
-		if mode != "realtime" && mode != "batch" {
-			utils.WriteErrorResponse(w, "InvalidParameter", "mode must be 'realtime' or 'batch'", http.StatusBadRequest)
+	if req.Mode != nil {
+		if *req.Mode != "realtime" && *req.Mode != "batch" {
+			writeAdminError(w, utils.ErrInvalidArgument, 400, "")
 			return
 		}
-		cfg.Mode = mode
-		if err := h.metadata.SetSetting(storage.SettingGeoStatsMode, mode); err != nil {
-			utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
-			return
-		}
-		config.Global.GeoStats.Mode = mode
+		cfg.Mode = *req.Mode
+		values[storage.SettingGeoStatsMode] = *req.Mode
 	}
-
-	// 更新批量模式缓存大小
-	if req.BatchSize != nil && *req.BatchSize > 0 {
-		cfg.BatchSize = *req.BatchSize
-		if err := h.metadata.SetSetting(storage.SettingGeoStatsBatchSize, strconv.Itoa(cfg.BatchSize)); err != nil {
-			utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
-			return
+	for key, item := range map[string]struct {
+		value  *int
+		target *int
+		max    int
+	}{
+		storage.SettingGeoStatsBatchSize: {req.BatchSize, &cfg.BatchSize, 10000}, storage.SettingGeoStatsFlushInterval: {req.FlushInterval, &cfg.FlushInterval, 86400}, storage.SettingGeoStatsRetentionDays: {req.RetentionDays, &cfg.RetentionDays, 36500},
+	} {
+		if item.value != nil {
+			if *item.value < 1 || *item.value > item.max {
+				writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+				return
+			}
+			*item.target = *item.value
+			values[key] = strconv.Itoa(*item.value)
 		}
-		config.Global.GeoStats.BatchSize = cfg.BatchSize
 	}
-
-	// 更新刷新间隔
-	if req.FlushInterval != nil && *req.FlushInterval > 0 {
-		cfg.FlushInterval = *req.FlushInterval
-		if err := h.metadata.SetSetting(storage.SettingGeoStatsFlushInterval, strconv.Itoa(cfg.FlushInterval)); err != nil {
-			utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
-			return
-		}
-		config.Global.GeoStats.FlushInterval = cfg.FlushInterval
+	if err := h.metadata.SetSettings(values); err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
 	}
-
-	// 更新数据保留天数
-	if req.RetentionDays != nil && *req.RetentionDays > 0 {
-		cfg.RetentionDays = *req.RetentionDays
-		if err := h.metadata.SetSetting(storage.SettingGeoStatsRetentionDays, strconv.Itoa(cfg.RetentionDays)); err != nil {
-			utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
-			return
-		}
-		config.Global.GeoStats.RetentionDays = cfg.RetentionDays
-	}
-
+	config.Global.GeoStats.Enabled = cfg.Enabled
+	config.Global.GeoStats.Mode = cfg.Mode
+	config.Global.GeoStats.BatchSize = cfg.BatchSize
+	config.Global.GeoStats.FlushInterval = cfg.FlushInterval
+	config.Global.GeoStats.RetentionDays = cfg.RetentionDays
 	// 应用配置到服务
 	if err := service.UpdateConfig(cfg); err != nil {
 		utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
@@ -175,7 +153,7 @@ func (h *Handler) handleGeoStatsData(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		h.deleteGeoStatsData(w, r)
 	default:
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 	}
 }
 
@@ -195,8 +173,16 @@ func (h *Handler) getGeoStatsData(w http.ResponseWriter, r *http.Request) {
 		endDate = time.Now().Format("2006-01-02")
 	}
 
+	if !validDateRange(startDate, endDate) {
+		writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+		return
+	}
 	// 解析分组方式
 	groupBy := query.Get("group_by")
+	if groupBy != "" && groupBy != "country" && groupBy != "city" {
+		writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+		return
+	}
 
 	// 解析限制数量
 	limit := 100
@@ -283,6 +269,10 @@ func (h *Handler) deleteGeoStatsData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if _, err := time.Parse("2006-01-02", beforeDate); err != nil {
+		writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+		return
+	}
 	// 删除指定日期之前的数据
 	affected, err := h.metadata.DeleteGeoStats(beforeDate)
 	if err != nil {
@@ -303,7 +293,7 @@ func (h *Handler) deleteGeoStatsData(w http.ResponseWriter, r *http.Request) {
 // handleGeoStatsSummary 处理 GeoStats 摘要 API
 func (h *Handler) handleGeoStatsSummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
@@ -321,6 +311,10 @@ func (h *Handler) handleGeoStatsSummary(w http.ResponseWriter, r *http.Request) 
 		endDate = time.Now().Format("2006-01-02")
 	}
 
+	if !validDateRange(startDate, endDate) {
+		writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+		return
+	}
 	summary, err := h.metadata.GetGeoStatsSummary(startDate, endDate)
 	if err != nil {
 		utils.WriteErrorResponse(w, "InternalError", err.Error(), http.StatusInternalServerError)
@@ -332,4 +326,10 @@ func (h *Handler) handleGeoStatsSummary(w http.ResponseWriter, r *http.Request) 
 	summary["end_date"] = endDate
 
 	utils.WriteJSONResponse(w, summary)
+}
+
+func validDateRange(start, end string) bool {
+	a, e1 := time.Parse("2006-01-02", start)
+	b, e2 := time.Parse("2006-01-02", end)
+	return e1 == nil && e2 == nil && !a.After(b)
 }

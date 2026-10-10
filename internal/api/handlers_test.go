@@ -222,6 +222,7 @@ func TestHandlePresign(t *testing.T) {
 			req := httptest.NewRequest(method, "/api/presign", nil)
 			rec := httptest.NewRecorder()
 
+			req = authorizedUnitRequest(t, server, req)
 			server.handlePresign(rec, req)
 
 			if rec.Code != http.StatusMethodNotAllowed {
@@ -247,6 +248,7 @@ func TestHandlePresign(t *testing.T) {
 				req.Header.Set("Content-Type", "application/json")
 				rec := httptest.NewRecorder()
 
+				req = authorizedUnitRequest(t, server, req)
 				server.handlePresign(rec, req)
 
 				if rec.Code != http.StatusBadRequest {
@@ -268,6 +270,7 @@ func TestHandlePresign(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
+			req = authorizedUnitRequest(t, server, req)
 			server.handlePresign(rec, req)
 
 			if rec.Code != http.StatusBadRequest {
@@ -287,6 +290,7 @@ func TestHandlePresign(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 
+			req = authorizedUnitRequest(t, server, req)
 			server.handlePresign(rec, req)
 
 			if rec.Code != http.StatusBadRequest {
@@ -301,6 +305,7 @@ func TestHandlePresign(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 
+		req = authorizedUnitRequest(t, server, req)
 		server.handlePresign(rec, req)
 
 		if rec.Code != http.StatusNotFound {
@@ -314,6 +319,7 @@ func TestHandlePresign(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 
+		req = authorizedUnitRequest(t, server, req)
 		server.handlePresign(rec, req)
 
 		if rec.Code != http.StatusOK {
@@ -342,6 +348,7 @@ func TestHandlePresign(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 
+		req = authorizedUnitRequest(t, server, req)
 		server.handlePresign(rec, req)
 
 		if rec.Code != http.StatusOK {
@@ -370,21 +377,11 @@ func TestHandlePresign(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 
+		req = authorizedUnitRequest(t, server, req)
 		server.handlePresign(rec, req)
 
-		if rec.Code != http.StatusOK {
-			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusOK, rec.Code)
-		}
-
-		var response PresignResponse
-		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-			t.Fatalf("解析响应失败: %v", err)
-		}
-
-		// 应该被限制为7天（7*24*60分钟）
-		maxExpires := 7 * 24 * 60 * 60
-		if response.Expires != maxExpires {
-			t.Errorf("Expires未被限制: 期望 %d, 实际 %d", maxExpires, response.Expires)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected invalid expiry rejection, got %d", rec.Code)
 		}
 	})
 
@@ -393,6 +390,7 @@ func TestHandlePresign(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 
+		req = authorizedUnitRequest(t, server, req)
 		server.handlePresign(rec, req)
 
 		if rec.Code != http.StatusBadRequest {
@@ -422,6 +420,7 @@ func TestHandleBucketAPI(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			rec := httptest.NewRecorder()
 
+			req = authorizedUnitRequest(t, server, req)
 			server.handleBucketAPI(rec, req)
 
 			if rec.Code != http.StatusNotFound {
@@ -434,6 +433,7 @@ func TestHandleBucketAPI(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/bucket/api-test-bucket/invalid-action", nil)
 		rec := httptest.NewRecorder()
 
+		req = authorizedUnitRequest(t, server, req)
 		server.handleBucketAPI(rec, req)
 
 		if rec.Code != http.StatusNotFound {
@@ -1230,6 +1230,7 @@ func TestPresignRequestWithContentType(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 
+		req = authorizedUnitRequest(t, server, req)
 		server.handlePresign(rec, req)
 
 		if rec.Code != http.StatusOK {
@@ -1252,6 +1253,7 @@ func TestPresignRequestWithContentType(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 
+		req = authorizedUnitRequest(t, server, req)
 		server.handlePresign(rec, req)
 
 		if rec.Code != http.StatusOK {

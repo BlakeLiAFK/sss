@@ -44,13 +44,6 @@ func (s *GeoIPService) Load(dbPath string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// 如果已有数据库，先关闭
-	if s.db != nil {
-		s.db.Close()
-		s.db = nil
-		s.enabled = false
-	}
-
 	// 检查文件是否存在
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		Info("GeoIP 数据库不存在，功能禁用", "path", dbPath)
@@ -64,6 +57,9 @@ func (s *GeoIPService) Load(dbPath string) error {
 		return err
 	}
 
+	if s.db != nil {
+		s.db.Close()
+	}
 	s.db = db
 	s.dbPath = dbPath
 	s.enabled = true
@@ -201,4 +197,28 @@ func GetDefaultGeoIPPath(dbPath string) string {
 func InitGeoIP(dbPath string) {
 	geoIPPath := GetDefaultGeoIPPath(dbPath)
 	GetGeoIPService().Load(geoIPPath)
+}
+
+// Replace opens and validates the candidate without changing the active reader.
+// Rename is the commit boundary; a failed rename preserves the old reader/file.
+func (s *GeoIPService) Replace(candidate, destination string) error {
+	db, err := geoip2.Open(candidate)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := os.Rename(candidate, destination); err != nil {
+		db.Close()
+		return err
+	}
+	old := s.db
+	s.db = db
+	s.dbPath = destination
+	s.lastLoad = destination
+	s.enabled = true
+	if old != nil {
+		old.Close()
+	}
+	return nil
 }

@@ -29,7 +29,7 @@ type LoginRateLimiter struct {
 
 // 速率限制配置
 const (
-	maxLoginAttempts  = 5               // 最大失败次数
+	maxLoginAttempts  = 5                // 最大失败次数
 	lockDuration      = 15 * time.Minute // 锁定时长
 	attemptResetAfter = 30 * time.Minute // 失败计数重置时间
 )
@@ -210,7 +210,7 @@ type AdminLoginResponse struct {
 // handleAdminLogin 处理管理员登录
 func (h *Handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
@@ -237,7 +237,7 @@ func (h *Handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 
 	var req AdminLoginRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
-		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 		return
 	}
 
@@ -314,7 +314,7 @@ func (h *Handler) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 // handleAdminLogout 处理管理员登出
 func (h *Handler) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 

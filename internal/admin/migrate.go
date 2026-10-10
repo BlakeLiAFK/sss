@@ -31,7 +31,7 @@ func (h *Handler) handleMigrateAPI(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		h.createMigrateJob(w, r)
 	default:
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 	}
 }
 
@@ -53,7 +53,7 @@ func (h *Handler) listMigrateJobs(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createMigrateJob(w http.ResponseWriter, r *http.Request) {
 	var req MigrateRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
-		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 		return
 	}
 
@@ -93,7 +93,7 @@ func (h *Handler) handleMigrateJob(w http.ResponseWriter, r *http.Request, path 
 		if r.Method == http.MethodPost {
 			h.validateMigrateConfig(w, r)
 		} else {
-			utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+			writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		}
 		return
 	}
@@ -124,7 +124,7 @@ func (h *Handler) handleMigrateJob(w http.ResponseWriter, r *http.Request, path 
 			if r.Method == http.MethodPost {
 				h.cancelMigrateJob(w, r, jobID)
 			} else {
-				utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+				writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 			}
 		default:
 			utils.WriteErrorResponse(w, "NotFound", "API endpoint not found", http.StatusNotFound)
@@ -139,7 +139,7 @@ func (h *Handler) handleMigrateJob(w http.ResponseWriter, r *http.Request, path 
 	case http.MethodDelete:
 		h.deleteMigrateJob(w, r, jobID)
 	default:
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 	}
 }
 
@@ -147,7 +147,7 @@ func (h *Handler) handleMigrateJob(w http.ResponseWriter, r *http.Request, path 
 func (h *Handler) validateMigrateConfig(w http.ResponseWriter, r *http.Request) {
 	var req MigrateRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
-		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 		return
 	}
 

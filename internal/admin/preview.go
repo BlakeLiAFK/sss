@@ -3,11 +3,10 @@ package admin
 import (
 	"io"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"sss/internal/auth"
 	"sss/internal/storage"
 	"sss/internal/utils"
 )
@@ -76,7 +75,7 @@ var pdfExtensions = map[string]bool{
 // GET /api/admin/buckets/{bucket}/preview?key=xxx
 func (h *Handler) previewObject(w http.ResponseWriter, r *http.Request, bucketName string) {
 	if r.Method != http.MethodGet {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
@@ -97,11 +96,11 @@ func (h *Handler) previewObject(w http.ResponseWriter, r *http.Request, bucketNa
 	obj, err := h.metadata.GetObject(bucketName, key)
 	if err != nil {
 		utils.Error("get object for preview failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 	if obj == nil {
-		utils.WriteError(w, utils.ErrNoSuchKey, http.StatusNotFound, "")
+		writeAdminError(w, utils.ErrNoSuchKey, http.StatusNotFound, "")
 		return
 	}
 
@@ -170,7 +169,7 @@ func (h *Handler) handleTextPreview(w http.ResponseWriter, resp *PreviewResponse
 	file, err := h.filestore.GetObject(obj.StoragePath)
 	if err != nil {
 		utils.Error("open file for preview failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 	defer file.Close()
@@ -185,7 +184,7 @@ func (h *Handler) handleTextPreview(w http.ResponseWriter, resp *PreviewResponse
 	n, err := io.ReadFull(file, content)
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
 		utils.Error("read file for preview failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 	content = content[:n]
@@ -218,10 +217,7 @@ func (h *Handler) handleTextPreview(w http.ResponseWriter, resp *PreviewResponse
 
 // generatePreviewURL 生成预览用的预签名 URL
 func (h *Handler) generatePreviewURL(bucket, key string) string {
-	opts := &auth.PresignOptions{
-		Expires: time.Duration(previewURLExpiry) * time.Minute,
-	}
-	return auth.GeneratePresignedURLWithOptions("GET", bucket, key, opts)
+	return "/api/admin/buckets/" + url.PathEscape(bucket) + "/download?inline=true&key=" + url.QueryEscape(key)
 }
 
 // getMimeType 根据扩展名获取 MIME 类型

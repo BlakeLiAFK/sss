@@ -16,7 +16,7 @@ import (
 )
 
 // setupTestConfig 设置测试配置
-func setupTestConfig() {
+func setupTestConfig(t testing.TB) {
 	// 确保 Global 被初始化
 	if config.Global == nil {
 		config.NewDefault()
@@ -27,10 +27,16 @@ func setupTestConfig() {
 	}
 	config.Global.Auth.AccessKeyID = "test-access-key"
 	config.Global.Auth.SecretAccessKey = "test-secret-key"
+	store, cleanup := setupTestStore(t)
+	t.Cleanup(cleanup)
+	if err := store.ImportLegacyAPIKey(config.Global.Auth.AccessKeyID, config.Global.Auth.SecretAccessKey); err != nil {
+		t.Fatal(err)
+	}
+	InitAPIKeyCache(store)
 }
 
 // setupTestStore 创建测试用的元数据存储
-func setupTestStore(t *testing.T) (*storage.MetadataStore, func()) {
+func setupTestStore(t testing.TB) (*storage.MetadataStore, func()) {
 	t.Helper()
 	dbPath := t.TempDir() + "/test.db"
 	store, err := storage.NewMetadataStore(dbPath)
@@ -178,7 +184,7 @@ func TestGetCanonicalURI(t *testing.T) {
 		{
 			name:     "特殊字符",
 			path:     "/bucket/file+name.txt",
-			expected: "/bucket/file+name.txt",
+			expected: "/bucket/file%2Bname.txt",
 		},
 		{
 			name:     "多级路径",
@@ -219,9 +225,9 @@ func TestGetCanonicalQueryString(t *testing.T) {
 		{
 			name: "多个参数按字母排序",
 			query: url.Values{
-				"z":    []string{"last"},
-				"a":    []string{"first"},
-				"m":    []string{"middle"},
+				"z": []string{"last"},
+				"a": []string{"first"},
+				"m": []string{"middle"},
 			},
 			expected: "a=first&m=middle&z=last",
 		},
@@ -237,7 +243,7 @@ func TestGetCanonicalQueryString(t *testing.T) {
 			query: url.Values{
 				"key": []string{"hello world"},
 			},
-			expected: "key=hello+world",
+			expected: "key=hello%20world",
 		},
 		{
 			name: "移除X-Amz-Signature",
@@ -365,7 +371,7 @@ func TestAuthHeaderRegex(t *testing.T) {
 // TestGetSecretKey 测试获取Secret Key
 func TestGetSecretKey(t *testing.T) {
 	// 设置测试配置
-	setupTestConfig()
+	setupTestConfig(t)
 
 	t.Run("从全局配置获取", func(t *testing.T) {
 		secret := getSecretKey("test-access-key")
@@ -384,7 +390,7 @@ func TestGetSecretKey(t *testing.T) {
 
 // TestCheckBucketPermission 测试桶权限检查
 func TestCheckBucketPermission(t *testing.T) {
-	setupTestConfig()
+	setupTestConfig(t)
 
 	t.Run("管理员Key有全部权限", func(t *testing.T) {
 		// 读权限
@@ -444,7 +450,7 @@ func TestReloadAPIKeyCache(t *testing.T) {
 
 // TestVerifyRequest 测试请求验证
 func TestVerifyRequest(t *testing.T) {
-	setupTestConfig()
+	setupTestConfig(t)
 
 	t.Run("无Authorization头", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/bucket/object", nil)
@@ -473,7 +479,7 @@ func TestVerifyRequest(t *testing.T) {
 
 // TestVerifyRequestAndGetAccessKey 测试请求验证并获取Access Key
 func TestVerifyRequestAndGetAccessKey(t *testing.T) {
-	setupTestConfig()
+	setupTestConfig(t)
 
 	t.Run("无Authorization头", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/bucket/object", nil)
@@ -626,7 +632,7 @@ func TestCalculateSignatureWithSecret(t *testing.T) {
 
 // TestVerifyPresignedURL 测试预签名URL验证
 func TestVerifyPresignedURL(t *testing.T) {
-	setupTestConfig()
+	setupTestConfig(t)
 
 	t.Run("缺少Credential参数", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/bucket/object?X-Amz-Signature=abc", nil)
@@ -678,7 +684,7 @@ func TestVerifyPresignedURL(t *testing.T) {
 
 // TestSignatureIntegration 测试签名验证完整流程
 func TestSignatureIntegration(t *testing.T) {
-	setupTestConfig()
+	setupTestConfig(t)
 
 	// 创建一个有效签名的请求
 	now := time.Now().UTC()
@@ -712,7 +718,7 @@ func TestSignatureIntegration(t *testing.T) {
 
 // TestSignatureWithDifferentMethods 测试不同HTTP方法的签名
 func TestSignatureWithDifferentMethods(t *testing.T) {
-	setupTestConfig()
+	setupTestConfig(t)
 
 	methods := []string{"GET", "PUT", "POST", "DELETE", "HEAD"}
 
@@ -747,7 +753,7 @@ func TestSignatureWithDifferentMethods(t *testing.T) {
 
 // TestSignatureTampering 测试签名篡改检测
 func TestSignatureTampering(t *testing.T) {
-	setupTestConfig()
+	setupTestConfig(t)
 
 	now := time.Now().UTC()
 	dateStr := now.Format("20060102")
@@ -766,6 +772,9 @@ func TestSignatureTampering(t *testing.T) {
 	t.Run("篡改签名", func(t *testing.T) {
 		// 修改签名的一个字符
 		tamperedSig := "0" + signature[1:]
+		if signature[0] == '0' {
+			tamperedSig = "1" + signature[1:]
+		}
 		authHeader := fmt.Sprintf("AWS4-HMAC-SHA256 Credential=%s/%s/%s/s3/aws4_request, SignedHeaders=%s, Signature=%s",
 			config.Global.Auth.AccessKeyID, dateStr, region, signedHeaders, tamperedSig)
 
@@ -822,7 +831,7 @@ func BenchmarkDeriveSigningKey(b *testing.B) {
 
 // BenchmarkCalculateSignature 签名计算性能测试
 func BenchmarkCalculateSignature(b *testing.B) {
-	setupTestConfig()
+	setupTestConfig(b)
 
 	req := httptest.NewRequest("GET", "/bucket/object", nil)
 	req.Host = "s3.example.com"
@@ -841,7 +850,7 @@ func BenchmarkCalculateSignature(b *testing.B) {
 
 // BenchmarkVerifyRequest 请求验证性能测试
 func BenchmarkVerifyRequest(b *testing.B) {
-	setupTestConfig()
+	setupTestConfig(b)
 
 	now := time.Now().UTC()
 	dateStr := now.Format("20060102")

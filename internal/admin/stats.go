@@ -2,6 +2,7 @@ package admin
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"sss/internal/storage"
@@ -25,19 +26,23 @@ type IntegrityRequest struct {
 // handleStorageStats 获取存储统计信息
 func (h *Handler) handleStorageStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
 	stats, err := h.metadata.GetStorageStats()
 	if err != nil {
 		utils.Error("get storage stats failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
 	// 获取磁盘实际使用情况
-	diskSize, fileCount, _ := h.filestore.GetDiskUsage()
+	diskSize, fileCount, err := h.filestore.GetDiskUsage()
+	if err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
+	}
 
 	response := map[string]interface{}{
 		"stats":           stats,
@@ -51,7 +56,7 @@ func (h *Handler) handleStorageStats(w http.ResponseWriter, r *http.Request) {
 // handleRecentObjects 获取最近上传的对象
 func (h *Handler) handleRecentObjects(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
@@ -65,7 +70,7 @@ func (h *Handler) handleRecentObjects(w http.ResponseWriter, r *http.Request) {
 	objects, err := h.metadata.GetRecentObjects(limit)
 	if err != nil {
 		utils.Error("get recent objects failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -84,14 +89,7 @@ func (h *Handler) handleRecentObjects(w http.ResponseWriter, r *http.Request) {
 
 // parseInt 解析整数
 func parseInt(s string) (int, error) {
-	var n int
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return 0, nil
-		}
-		n = n*10 + int(c-'0')
-	}
-	return n, nil
+	return strconv.Atoi(s)
 }
 
 // handleGC 处理垃圾回收
@@ -104,7 +102,7 @@ func (h *Handler) handleGC(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		h.executeGC(w, r)
 	default:
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 	}
 }
 
@@ -115,15 +113,18 @@ func (h *Handler) scanGC(w http.ResponseWriter, r *http.Request) {
 
 	// 从 query 参数获取自定义过期时间
 	if ageStr := r.URL.Query().Get("max_upload_age"); ageStr != "" {
-		if hours, err := parseInt(ageStr); err == nil && hours > 0 {
-			maxUploadAge = time.Duration(hours) * time.Hour
+		hours, err := parseInt(ageStr)
+		if err != nil || hours < 1 || hours > 87600 {
+			writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+			return
 		}
+		maxUploadAge = time.Duration(hours) * time.Hour
 	}
 
 	result, err := storage.RunGC(h.filestore, h.metadata, maxUploadAge, true)
 	if err != nil {
 		utils.Error("gc scan failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -134,11 +135,14 @@ func (h *Handler) scanGC(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) executeGC(w http.ResponseWriter, r *http.Request) {
 	var req GCRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
-		// 使用默认值
-		req.MaxUploadAge = 24
-		req.DryRun = false
+		writeAdminError(w, utils.ErrMalformedJSON, 400, "")
+		return
 	}
 
+	if req.MaxUploadAge < 0 || req.MaxUploadAge > 87600 {
+		writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+		return
+	}
 	// 默认过期时间 24 小时
 	maxUploadAge := time.Duration(req.MaxUploadAge) * time.Hour
 	if maxUploadAge <= 0 {
@@ -148,7 +152,7 @@ func (h *Handler) executeGC(w http.ResponseWriter, r *http.Request) {
 	result, err := storage.RunGC(h.filestore, h.metadata, maxUploadAge, req.DryRun)
 	if err != nil {
 		utils.Error("gc execute failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -165,7 +169,7 @@ func (h *Handler) handleIntegrity(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		h.repairIntegrity(w, r)
 	default:
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 	}
 }
 
@@ -177,15 +181,18 @@ func (h *Handler) checkIntegrity(w http.ResponseWriter, r *http.Request) {
 	// 检查数量限制（默认 1000）
 	limit := 1000
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if l, err := parseInt(limitStr); err == nil && l > 0 {
-			limit = l
+		l, err := parseInt(limitStr)
+		if err != nil || l < 1 || l > 10000 {
+			writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+			return
 		}
+		limit = l
 	}
 
 	result, err := storage.CheckIntegrity(h.filestore, h.metadata, verifyEtag, limit)
 	if err != nil {
 		utils.Error("integrity check failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -196,16 +203,23 @@ func (h *Handler) checkIntegrity(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) repairIntegrity(w http.ResponseWriter, r *http.Request) {
 	var req IntegrityRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
-		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 		return
 	}
 
+	if !req.Repair || req.Limit < 0 || req.Limit > 10000 {
+		writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+		return
+	}
+	if req.Limit == 0 {
+		req.Limit = 1000
+	}
 	// 如果没有提供问题列表，先扫描
 	if len(req.Issues) == 0 {
 		scanResult, err := storage.CheckIntegrity(h.filestore, h.metadata, req.VerifyEtag, req.Limit)
 		if err != nil {
 			utils.Error("integrity scan for repair failed", "error", err)
-			utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+			writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 			return
 		}
 		req.Issues = scanResult.Issues
@@ -215,7 +229,7 @@ func (h *Handler) repairIntegrity(w http.ResponseWriter, r *http.Request) {
 	result, err := storage.RepairIntegrity(h.filestore, h.metadata, req.Issues)
 	if err != nil {
 		utils.Error("integrity repair failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 

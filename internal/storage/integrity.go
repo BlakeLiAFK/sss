@@ -3,7 +3,6 @@ package storage
 import (
 	"crypto/md5"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"os"
 	"time"
@@ -13,25 +12,25 @@ import (
 type IntegrityIssue struct {
 	Bucket     string `json:"bucket"`
 	Key        string `json:"key"`
-	IssueType  string `json:"issue_type"`  // missing_file, etag_mismatch, path_mismatch
-	Expected   string `json:"expected"`    // 预期值
-	Actual     string `json:"actual"`      // 实际值
-	Size       int64  `json:"size"`        // 文件大小
+	IssueType  string `json:"issue_type"` // missing_file, etag_mismatch, path_mismatch
+	Expected   string `json:"expected"`   // 预期值
+	Actual     string `json:"actual"`     // 实际值
+	Size       int64  `json:"size"`       // 文件大小
 	Repairable bool   `json:"repairable"` // 是否可修复
 }
 
 // IntegrityResult 完整性检查结果
 type IntegrityResult struct {
-	TotalChecked   int              `json:"total_checked"`    // 检查的对象总数
-	IssuesFound    int              `json:"issues_found"`     // 发现的问题数
-	Issues         []IntegrityIssue `json:"issues"`           // 问题列表
-	MissingFiles   int              `json:"missing_files"`    // 缺失文件数
-	EtagMismatches int              `json:"etag_mismatches"`  // ETag 不匹配数
-	PathMismatches int              `json:"path_mismatches"`  // 路径不匹配数
-	CheckedAt      time.Time        `json:"checked_at"`       // 检查时间
-	Duration       float64          `json:"duration"`         // 检查耗时（秒）
-	Repaired       bool             `json:"repaired"`         // 是否已修复
-	RepairedCount  int              `json:"repaired_count"`   // 修复数量
+	TotalChecked   int              `json:"total_checked"`   // 检查的对象总数
+	IssuesFound    int              `json:"issues_found"`    // 发现的问题数
+	Issues         []IntegrityIssue `json:"issues"`          // 问题列表
+	MissingFiles   int              `json:"missing_files"`   // 缺失文件数
+	EtagMismatches int              `json:"etag_mismatches"` // ETag 不匹配数
+	PathMismatches int              `json:"path_mismatches"` // 路径不匹配数
+	CheckedAt      time.Time        `json:"checked_at"`      // 检查时间
+	Duration       float64          `json:"duration"`        // 检查耗时（秒）
+	Repaired       bool             `json:"repaired"`        // 是否已修复
+	RepairedCount  int              `json:"repaired_count"`  // 修复数量
 }
 
 // CheckIntegrity 检查数据完整性
@@ -126,6 +125,13 @@ func RepairIntegrity(filestore *FileStore, metadata *MetadataStore, issues []Int
 
 		switch issue.IssueType {
 		case "missing_file":
+			obj, err := metadata.GetObject(issue.Bucket, issue.Key)
+			if err != nil || obj == nil {
+				continue
+			}
+			if _, err := os.Stat(obj.StoragePath); !os.IsNotExist(err) {
+				continue
+			}
 			// 删除元数据记录
 			if err := metadata.DeleteObject(issue.Bucket, issue.Key); err == nil {
 				result.RepairedCount++
@@ -133,7 +139,7 @@ func RepairIntegrity(filestore *FileStore, metadata *MetadataStore, issues []Int
 		case "etag_mismatch":
 			// 重新计算并更新 ETag
 			obj, err := metadata.GetObject(issue.Bucket, issue.Key)
-			if err != nil {
+			if err != nil || obj == nil {
 				continue
 			}
 			newEtag, err := calculateFileEtag(obj.StoragePath)
@@ -141,7 +147,7 @@ func RepairIntegrity(filestore *FileStore, metadata *MetadataStore, issues []Int
 				continue
 			}
 			// 更新 ETag
-			if err := metadata.UpdateObjectEtag(issue.Bucket, issue.Key, fmt.Sprintf("\"%s\"", newEtag)); err == nil {
+			if err := metadata.UpdateObjectEtag(issue.Bucket, issue.Key, newEtag); err == nil {
 				result.RepairedCount++
 			}
 		}
@@ -184,4 +190,3 @@ func (m *MetadataStore) UpdateObjectEtag(bucket, key, etag string) error {
 	`, etag, bucket, key)
 	return err
 }
-

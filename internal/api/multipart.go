@@ -3,7 +3,7 @@ package api
 import (
 	"encoding/xml"
 	"net/http"
-	"sort"
+	"sss/internal/config"
 	"strconv"
 	"strings"
 	"time"
@@ -128,13 +128,13 @@ func (s *Server) handleUploadPart(w http.ResponseWriter, r *http.Request, bucket
 		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+bucket+"/"+key)
 		return
 	}
-	if upload == nil {
+	if upload == nil || upload.Bucket != bucket || upload.Key != key {
 		utils.WriteError(w, utils.ErrNoSuchUpload, http.StatusNotFound, "/"+bucket+"/"+key)
 		return
 	}
 
 	// 存储分片
-	etag, size, err := s.filestore.PutPart(uploadID, partNumber, r.Body)
+	storagePath, etag, size, err := s.filestore.StorePart(uploadID, partNumber, r.Body)
 	if err != nil {
 		utils.Error("store part failed", "error", err)
 		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+bucket+"/"+key)
@@ -143,14 +143,16 @@ func (s *Server) handleUploadPart(w http.ResponseWriter, r *http.Request, bucket
 
 	// 保存分片元数据
 	part := &storage.Part{
-		UploadID:   uploadID,
-		PartNumber: partNumber,
-		Size:       size,
-		ETag:       etag,
-		ModifiedAt: time.Now().UTC(),
+		UploadID:    uploadID,
+		StoragePath: storagePath,
+		PartNumber:  partNumber,
+		Size:        size,
+		ETag:        etag,
+		ModifiedAt:  time.Now().UTC(),
 	}
 
 	if err := s.metadata.PutPart(part); err != nil {
+		s.filestore.DeleteObject(storagePath)
 		utils.Error("save part metadata failed", "error", err)
 		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+bucket+"/"+key)
 		return
@@ -169,7 +171,7 @@ func (s *Server) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.Re
 		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+bucket+"/"+key)
 		return
 	}
-	if upload == nil {
+	if upload == nil || upload.Bucket != bucket || upload.Key != key {
 		utils.WriteError(w, utils.ErrNoSuchUpload, http.StatusNotFound, "/"+bucket+"/"+key)
 		return
 	}
@@ -201,8 +203,17 @@ func (s *Server) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.Re
 	}
 
 	// 验证请求的分片
-	var partNumbers []int
-	for _, reqPart := range completeReq.Parts {
+	var selected []storage.Part
+	if len(completeReq.Parts) == 0 || len(completeReq.Parts) > 10000 {
+		utils.WriteError(w, utils.ErrInvalidPart, 400, r.URL.Path)
+		return
+	}
+	var sum int64
+	for i, reqPart := range completeReq.Parts {
+		if i > 0 && reqPart.PartNumber <= completeReq.Parts[i-1].PartNumber {
+			utils.WriteError(w, utils.S3Error{Code: "InvalidPartOrder", Message: "Parts must be in ascending order"}, 400, r.URL.Path)
+			return
+		}
 		dbPart, ok := partMap[reqPart.PartNumber]
 		if !ok {
 			utils.WriteError(w, utils.ErrInvalidPart, http.StatusBadRequest, "/"+bucket+"/"+key)
@@ -214,14 +225,24 @@ func (s *Server) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.Re
 			utils.WriteError(w, utils.ErrInvalidPart, http.StatusBadRequest, "/"+bucket+"/"+key)
 			return
 		}
-		partNumbers = append(partNumbers, reqPart.PartNumber)
+		if i < len(completeReq.Parts)-1 && dbPart.Size < 5*1024*1024 {
+			utils.WriteError(w, utils.S3Error{Code: "EntityTooSmall", Message: "Part is smaller than 5 MiB"}, 400, r.URL.Path)
+			return
+		}
+		sum += dbPart.Size
+		if config.Global.Storage.MaxObjectSize > 0 && sum > config.Global.Storage.MaxObjectSize {
+			utils.WriteError(w, utils.ErrEntityTooLarge, 400, r.URL.Path)
+			return
+		}
+		selected = append(selected, dbPart)
 	}
 
-	// 按分片号排序
-	sort.Ints(partNumbers)
+	if !s.checkWriteConditions(w, r, bucket, key) {
+		return
+	}
 
 	// 合并分片
-	etag, totalSize, err := s.filestore.MergeParts(bucket, key, uploadID, partNumbers)
+	storagePath, etag, totalSize, err := s.filestore.MergeStoredParts(bucket, key, uploadID, selected)
 	if err != nil {
 		utils.Error("merge parts failed", "error", err)
 		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+bucket+"/"+key)
@@ -236,15 +257,17 @@ func (s *Server) handleCompleteMultipartUpload(w http.ResponseWriter, r *http.Re
 		ETag:         etag,
 		ContentType:  upload.ContentType,
 		LastModified: time.Now().UTC(),
-		StoragePath:  s.filestore.GetStoragePath(bucket, key),
+		StoragePath:  storagePath,
 	}
 
-	if err := s.metadata.PutObject(obj); err != nil {
+	if err := s.metadata.CompleteMultipart(obj, uploadID); err != nil {
+		s.filestore.DeleteObject(storagePath)
 		utils.Error("save object metadata failed", "error", err)
 		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+bucket+"/"+key)
 		return
 	}
 
+	s.filestore.AbortMultipartUpload(uploadID)
 	// 清理多段上传记录
 	s.metadata.DeleteParts(uploadID)
 	s.metadata.DeleteMultipartUpload(uploadID)
@@ -269,7 +292,7 @@ func (s *Server) handleAbortMultipartUpload(w http.ResponseWriter, r *http.Reque
 		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+bucket+"/"+key)
 		return
 	}
-	if upload == nil {
+	if upload == nil || upload.Bucket != bucket || upload.Key != key {
 		utils.WriteError(w, utils.ErrNoSuchUpload, http.StatusNotFound, "/"+bucket+"/"+key)
 		return
 	}
@@ -295,11 +318,25 @@ func (s *Server) handleListParts(w http.ResponseWriter, r *http.Request, bucket,
 		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "/"+bucket+"/"+key)
 		return
 	}
-	if upload == nil {
+	if upload == nil || upload.Bucket != bucket || upload.Key != key {
 		utils.WriteError(w, utils.ErrNoSuchUpload, http.StatusNotFound, "/"+bucket+"/"+key)
 		return
 	}
 
+	marker, maxParts := 0, 1000
+	for name, dest := range map[string]*int{"part-number-marker": &marker, "max-parts": &maxParts} {
+		if value := r.URL.Query().Get(name); value != "" {
+			n, err := strconv.Atoi(value)
+			if err != nil || n < 0 || n > 10000 {
+				utils.WriteError(w, utils.ErrInvalidArgument, 400, r.URL.Path)
+				return
+			}
+			*dest = n
+		}
+	}
+	if maxParts > 1000 {
+		maxParts = 1000
+	}
 	// 获取分片列表
 	parts, err := s.metadata.ListParts(uploadID)
 	if err != nil {
@@ -309,24 +346,29 @@ func (s *Server) handleListParts(w http.ResponseWriter, r *http.Request, bucket,
 	}
 
 	result := ListPartsResult{
-		Xmlns:    "http://s3.amazonaws.com/doc/2006-03-01/",
-		Bucket:   bucket,
-		Key:      key,
-		UploadId: uploadID,
-		MaxParts: 1000,
+		Xmlns:            "http://s3.amazonaws.com/doc/2006-03-01/",
+		Bucket:           bucket,
+		Key:              key,
+		UploadId:         uploadID,
+		MaxParts:         maxParts,
+		PartNumberMarker: marker,
 	}
 
 	for _, p := range parts {
+		if p.PartNumber <= marker {
+			continue
+		}
+		if len(result.Parts) >= maxParts {
+			result.IsTruncated = true
+			break
+		}
+		result.NextPartNumberMarker = p.PartNumber
 		result.Parts = append(result.Parts, PartInfo{
 			PartNumber:   p.PartNumber,
 			LastModified: p.ModifiedAt.UTC().Format(time.RFC3339),
 			ETag:         `"` + p.ETag + `"`,
 			Size:         p.Size,
 		})
-	}
-
-	if len(parts) > 0 {
-		result.NextPartNumberMarker = parts[len(parts)-1].PartNumber
 	}
 
 	utils.WriteXML(w, http.StatusOK, result)

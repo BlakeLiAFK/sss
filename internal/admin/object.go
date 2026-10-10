@@ -2,9 +2,10 @@ package admin
 
 import (
 	"fmt"
-	"io"
+	"mime"
 	"net/http"
 	"path/filepath"
+	"sss/internal/config"
 	"strings"
 	"time"
 
@@ -28,7 +29,7 @@ func (h *Handler) adminObjectsHandler(w http.ResponseWriter, r *http.Request, bu
 	case http.MethodDelete:
 		h.adminDeleteObject(w, r, bucketName)
 	default:
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 	}
 }
 
@@ -41,7 +42,7 @@ func (h *Handler) adminListObjects(w http.ResponseWriter, r *http.Request, bucke
 	result, err := h.metadata.ListObjects(bucketName, prefix, marker, "", maxKeys)
 	if err != nil {
 		utils.Error("list objects failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -81,23 +82,18 @@ func (h *Handler) adminDeleteObject(w http.ResponseWriter, r *http.Request, buck
 	obj, err := h.metadata.GetObject(bucketName, key)
 	if err != nil {
 		utils.Error("get object for delete failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 	if obj == nil {
-		utils.WriteError(w, utils.ErrNoSuchKey, http.StatusNotFound, "")
+		writeAdminError(w, utils.ErrNoSuchKey, http.StatusNotFound, "")
 		return
-	}
-
-	// 删除文件
-	if err := h.filestore.DeleteObject(obj.StoragePath); err != nil {
-		utils.Error("delete file failed", "key", key, "error", err)
 	}
 
 	// 删除元数据
 	if err := h.metadata.DeleteObject(bucketName, key); err != nil {
 		utils.Error("delete metadata failed", "key", key, "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -108,7 +104,7 @@ func (h *Handler) adminDeleteObject(w http.ResponseWriter, r *http.Request, buck
 // POST /api/admin/buckets/{bucket}/upload?key=xxx
 func (h *Handler) adminUploadObject(w http.ResponseWriter, r *http.Request, bucketName string) {
 	if r.Method != http.MethodPost {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
@@ -124,12 +120,20 @@ func (h *Handler) adminUploadObject(w http.ResponseWriter, r *http.Request, buck
 		return
 	}
 
+	limit := int64(5 << 30)
+	for _, n := range []int64{config.Global.Storage.MaxObjectSize, config.Global.Storage.MaxUploadSize} {
+		if n > 0 && n < limit {
+			limit = n
+		}
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, limit+(1<<20))
 	// 解析 multipart form
 	if err := r.ParseMultipartForm(32 << 20); err != nil { // 32MB
-		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 		return
 	}
 
+	defer r.MultipartForm.RemoveAll()
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		utils.WriteErrorResponse(w, "MissingFile", "No file uploaded", http.StatusBadRequest)
@@ -137,6 +141,10 @@ func (h *Handler) adminUploadObject(w http.ResponseWriter, r *http.Request, buck
 	}
 	defer file.Close()
 
+	if header.Size > limit {
+		writeAdminError(w, utils.ErrEntityTooLarge, 413, "")
+		return
+	}
 	// 确定 content type
 	contentType := header.Header.Get("Content-Type")
 	if contentType == "" {
@@ -147,7 +155,7 @@ func (h *Handler) adminUploadObject(w http.ResponseWriter, r *http.Request, buck
 	storagePath, etag, err := h.filestore.PutObject(bucketName, key, file, header.Size)
 	if err != nil {
 		utils.Error("save uploaded file failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -165,7 +173,7 @@ func (h *Handler) adminUploadObject(w http.ResponseWriter, r *http.Request, buck
 		utils.Error("save object metadata failed", "error", err)
 		// 回滚：删除已上传的文件
 		h.filestore.DeleteObject(storagePath)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -187,13 +195,13 @@ type CopyObjectRequest struct {
 // POST /api/admin/buckets/{bucket}/copy
 func (h *Handler) adminCopyObject(w http.ResponseWriter, r *http.Request, bucketName string) {
 	if r.Method != http.MethodPost {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
 	var req CopyObjectRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
-		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 		return
 	}
 
@@ -212,11 +220,11 @@ func (h *Handler) adminCopyObject(w http.ResponseWriter, r *http.Request, bucket
 	srcObj, err := h.metadata.GetObject(bucketName, req.SourceKey)
 	if err != nil {
 		utils.Error("get source object failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 	if srcObj == nil {
-		utils.WriteError(w, utils.ErrNoSuchKey, http.StatusNotFound, "")
+		writeAdminError(w, utils.ErrNoSuchKey, http.StatusNotFound, "")
 		return
 	}
 
@@ -224,7 +232,7 @@ func (h *Handler) adminCopyObject(w http.ResponseWriter, r *http.Request, bucket
 	newStoragePath, newETag, err := h.filestore.CopyObject(srcObj.StoragePath, bucketName, req.DestKey)
 	if err != nil {
 		utils.Error("copy file failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -242,7 +250,7 @@ func (h *Handler) adminCopyObject(w http.ResponseWriter, r *http.Request, bucket
 		utils.Error("save copied object metadata failed", "error", err)
 		// 回滚：删除已复制的文件
 		h.filestore.DeleteObject(newStoragePath)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -259,7 +267,7 @@ func (h *Handler) adminCopyObject(w http.ResponseWriter, r *http.Request, bucket
 // GET /api/admin/buckets/{bucket}/search?q=keyword
 func (h *Handler) adminSearchObjects(w http.ResponseWriter, r *http.Request, bucketName string) {
 	if r.Method != http.MethodGet {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
@@ -272,7 +280,7 @@ func (h *Handler) adminSearchObjects(w http.ResponseWriter, r *http.Request, buc
 	results, err := h.metadata.SearchObjects(bucketName, keyword, 100)
 	if err != nil {
 		utils.Error("search objects failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -296,7 +304,7 @@ func (h *Handler) adminSearchObjects(w http.ResponseWriter, r *http.Request, buc
 // GET /api/admin/buckets/{bucket}/download?key=xxx
 func (h *Handler) adminDownloadObject(w http.ResponseWriter, r *http.Request, bucketName string) {
 	if r.Method != http.MethodGet {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
@@ -316,11 +324,11 @@ func (h *Handler) adminDownloadObject(w http.ResponseWriter, r *http.Request, bu
 	obj, err := h.metadata.GetObject(bucketName, key)
 	if err != nil {
 		utils.Error("get object for download failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 	if obj == nil {
-		utils.WriteError(w, utils.ErrNoSuchKey, http.StatusNotFound, "")
+		writeAdminError(w, utils.ErrNoSuchKey, http.StatusNotFound, "")
 		return
 	}
 
@@ -328,7 +336,7 @@ func (h *Handler) adminDownloadObject(w http.ResponseWriter, r *http.Request, bu
 	file, err := h.filestore.GetObject(obj.StoragePath)
 	if err != nil {
 		utils.Error("read file for download failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 	defer file.Close()
@@ -336,10 +344,16 @@ func (h *Handler) adminDownloadObject(w http.ResponseWriter, r *http.Request, bu
 	// 设置响应头
 	fileName := filepath.Base(key)
 	w.Header().Set("Content-Type", obj.ContentType)
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+fileName+"\"")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": fileName}))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", obj.Size))
-	w.Header().Set("ETag", obj.ETag)
+	w.Header().Set("ETag", `"`+obj.ETag+`"`)
 
-	// 发送文件内容
-	io.Copy(w, file)
+	if r.URL.Query().Get("inline") == "true" {
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": fileName}))
+		w.Header().Set("Content-Security-Policy", "sandbox")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+	}
+	// ServeContent supports byte ranges for media seeking.
+	w.Header().Del("Content-Length")
+	http.ServeContent(w, r, fileName, obj.LastModified, file)
 }

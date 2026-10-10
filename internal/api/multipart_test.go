@@ -260,7 +260,7 @@ func TestHandleCompleteMultipartUpload(t *testing.T) {
 		uploadID := initResult.UploadId
 
 		// 通过API上传分片
-		part1Content := bytes.Repeat([]byte("A"), 1024)
+		part1Content := bytes.Repeat([]byte("A"), 5*1024*1024)
 		part2Content := bytes.Repeat([]byte("B"), 1024)
 
 		part1Req := httptest.NewRequest(http.MethodPut, "/complete-bucket/completed-file.bin?uploadId="+uploadID+"&partNumber=1", bytes.NewReader(part1Content))

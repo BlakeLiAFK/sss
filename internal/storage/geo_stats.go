@@ -144,6 +144,9 @@ func (s *GeoStatsService) UpdateConfig(cfg GeoStatsConfig) error {
 		s.stopBatchFlush()
 	}
 
+	if s.running && cfg.FlushInterval != s.config.FlushInterval {
+		s.stopBatchFlush()
+	}
 	// 更新配置
 	s.config = &cfg
 
@@ -245,12 +248,13 @@ func (s *GeoStatsService) startBatchFlush() {
 	s.ticker = time.NewTicker(time.Duration(s.config.FlushInterval) * time.Second)
 	s.running = true
 
+	ticker, stopChan := s.ticker, s.stopChan
 	go func() {
 		for {
 			select {
-			case <-s.ticker.C:
+			case <-ticker.C:
 				s.Flush()
-			case <-s.stopChan:
+			case <-stopChan:
 				return
 			}
 		}

@@ -48,41 +48,17 @@ func (s *Server) handleGetObject(w http.ResponseWriter, r *http.Request, bucket,
 	}
 	defer file.Close()
 
-	// 处理 Range 请求
+	if !checkReadConditions(w, r, obj) {
+		return
+	}
 	var start, end int64 = 0, obj.Size - 1
 	rangeHeader := r.Header.Get("Range")
-	if rangeHeader != "" && obj.Size > 0 {
-		if strings.HasPrefix(rangeHeader, "bytes=") {
-			rangeSpec := strings.TrimPrefix(rangeHeader, "bytes=")
-			parts := strings.Split(rangeSpec, "-")
-			if len(parts) == 2 {
-				if parts[0] != "" {
-					parsedStart, err := strconv.ParseInt(parts[0], 10, 64)
-					if err == nil && parsedStart >= 0 {
-						start = parsedStart
-					}
-				}
-				if parts[1] != "" {
-					parsedEnd, err := strconv.ParseInt(parts[1], 10, 64)
-					if err == nil && parsedEnd >= 0 {
-						end = parsedEnd
-					}
-				} else if parts[0] != "" {
-					end = obj.Size - 1
-				}
-			}
-		}
-		// 验证范围有效性
-		if start < 0 {
-			start = 0
-		}
-		if end >= obj.Size {
-			end = obj.Size - 1
-		}
-		if start > end {
-			// 无效范围，返回416
+	if rangeHeader != "" {
+		var ok bool
+		start, end, ok = parseRange(rangeHeader, obj.Size)
+		if !ok {
 			w.Header().Set("Content-Range", "bytes */"+strconv.FormatInt(obj.Size, 10))
-			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+			utils.WriteError(w, utils.S3Error{Code: "InvalidRange", Message: "Invalid Range"}, 416, r.URL.Path)
 			return
 		}
 	}
@@ -132,6 +108,9 @@ func (s *Server) handlePutObject(w http.ResponseWriter, r *http.Request, bucket,
 		return
 	}
 
+	if !s.checkWriteConditions(w, r, bucket, key) {
+		return
+	}
 	// 验证文件大小限制
 	query := r.URL.Query()
 
@@ -217,11 +196,6 @@ func (s *Server) handleDeleteObject(w http.ResponseWriter, r *http.Request, buck
 	}
 
 	if obj != nil {
-		// 删除文件
-		if err := s.filestore.DeleteObject(obj.StoragePath); err != nil {
-			utils.Warn("delete object file failed", "error", err)
-		}
-
 		// 删除元数据
 		if err := s.metadata.DeleteObject(bucket, key); err != nil {
 			utils.Error("delete object metadata failed", "error", err)
@@ -259,6 +233,9 @@ func (s *Server) handleCopyObject(w http.ResponseWriter, r *http.Request, destBu
 	}
 	srcBucket := parts[0]
 	srcKey := parts[1]
+	if !s.checkBucketPermission(r, w, srcBucket, false) {
+		return
+	}
 
 	// 验证路径安全性（防止路径遍历）
 	if strings.Contains(srcBucket, "..") || strings.ContainsAny(srcBucket, "/\\") {
@@ -306,6 +283,9 @@ func (s *Server) handleCopyObject(w http.ResponseWriter, r *http.Request, destBu
 		return
 	}
 
+	if !s.checkWriteConditions(w, r, destBucket, destKey) {
+		return
+	}
 	// 复制文件
 	newStoragePath, etag, err := s.filestore.CopyObject(srcObj.StoragePath, destBucket, destKey)
 	if err != nil {
@@ -369,6 +349,9 @@ func (s *Server) handleHeadObject(w http.ResponseWriter, r *http.Request, bucket
 		return
 	}
 
+	if !checkReadConditions(w, r, obj) {
+		return
+	}
 	w.Header().Set("Content-Type", obj.ContentType)
 	w.Header().Set("Content-Length", strconv.FormatInt(obj.Size, 10))
 	w.Header().Set("ETag", `"`+obj.ETag+`"`)

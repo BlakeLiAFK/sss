@@ -42,9 +42,9 @@ const (
 	SettingStorageMaxUploadSize = "storage.max_upload_size"
 
 	// 安全配置
-	SettingSecurityCORSOrigin     = "security.cors_origin"      // CORS 允许的来源，默认 "*"
-	SettingSecurityPresignScheme  = "security.presign_scheme"   // 预签名URL协议，"http" 或 "https"
-	SettingSecurityTrustedProxies = "security.trusted_proxies"  // 信任的代理 IP/CIDR，逗号分隔
+	SettingSecurityCORSOrigin     = "security.cors_origin"     // CORS 允许的来源，默认 "*"
+	SettingSecurityPresignScheme  = "security.presign_scheme"  // 预签名URL协议，"http" 或 "https"
+	SettingSecurityTrustedProxies = "security.trusted_proxies" // 信任的代理 IP/CIDR，逗号分隔
 
 	// 认证配置
 	SettingAuthAdminUsername     = "auth.admin_username"
@@ -343,4 +343,71 @@ func parseInt64Safe(s string, result *int64) (int64, error) {
 	}
 	*result = n
 	return n, nil
+}
+
+// SetSettings commits validated configuration as one SQLite transaction.
+func (m *MetadataStore) SetSettings(values map[string]string) error {
+	return m.withWriteLock(func() error {
+		tx, err := m.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		for key, value := range values {
+			if _, err := tx.Exec("INSERT OR REPLACE INTO system_settings (key,value,updated_at) VALUES (?,?,?)", key, value, time.Now().UTC()); err != nil {
+				return err
+			}
+		}
+		return tx.Commit()
+	})
+}
+
+// InstallSystem creates the administrator, initial key, settings, and installation
+// marker in one transaction. A second process cannot partially reinitialize it.
+func (m *MetadataStore) InstallSystem(username, password, region string) (*InitDefaultSettingsResult, error) {
+	if err := ValidatePassword(password); err != nil {
+		return nil, err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+	result := &InitDefaultSettingsResult{AccessKeyID: generateRandomKey(20), SecretAccessKey: generateRandomKey(40)}
+	encrypted, err := m.EncryptSecret(result.SecretAccessKey)
+	if err != nil {
+		return nil, err
+	}
+	err = m.withWriteLock(func() error {
+		tx, err := m.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		var installed string
+		err = tx.QueryRow("SELECT value FROM system_settings WHERE key=?", SettingSystemInstalled).Scan(&installed)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if installed == "true" {
+			return errors.New("already installed")
+		}
+		now := time.Now().UTC()
+		values := map[string]string{SettingAuthAdminUsername: username, SettingAuthAdminPasswordHash: string(hash), SettingServerRegion: region, SettingStorageMaxObjectSize: "5368709120", SettingStorageMaxUploadSize: "1073741824", SettingSystemInstalled: "true", SettingSystemInstalledAt: now.Format(time.RFC3339), SettingAuthAccessKeyID: result.AccessKeyID}
+		for key, value := range values {
+			if _, err := tx.Exec("INSERT OR REPLACE INTO system_settings(key,value,updated_at) VALUES(?,?,?)", key, value, now); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec("INSERT INTO api_keys(access_key_id,secret_access_key,description,created_at,enabled) VALUES(?,?,?,?,1)", result.AccessKeyID, encrypted, "Initial API key", now); err != nil {
+			return err
+		}
+		if _, err := tx.Exec("INSERT INTO api_key_permissions(access_key_id,bucket_name,can_read,can_write) VALUES(?,'*',1,1)", result.AccessKeyID); err != nil {
+			return err
+		}
+		return tx.Commit()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }

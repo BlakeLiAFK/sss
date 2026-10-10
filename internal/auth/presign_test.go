@@ -11,7 +11,8 @@ import (
 )
 
 // setupPresignTestConfig 设置预签名测试配置
-func setupPresignTestConfig() {
+func setupPresignTestConfig(t testing.TB) {
+	setupTestConfig(t)
 	// 确保 Global 被初始化
 	if config.Global == nil {
 		config.NewDefault()
@@ -29,7 +30,7 @@ func setupPresignTestConfig() {
 
 // TestGeneratePresignedURL 测试基本预签名URL生成
 func TestGeneratePresignedURL(t *testing.T) {
-	setupPresignTestConfig()
+	setupPresignTestConfig(t)
 
 	testCases := []struct {
 		name    string
@@ -142,7 +143,7 @@ func TestGeneratePresignedURL(t *testing.T) {
 
 // TestGeneratePresignedURLWithOptions 测试带选项的预签名URL生成
 func TestGeneratePresignedURLWithOptions(t *testing.T) {
-	setupPresignTestConfig()
+	setupPresignTestConfig(t)
 
 	testCases := []struct {
 		name                string
@@ -248,7 +249,7 @@ func TestGeneratePresignedURLWithOptions(t *testing.T) {
 
 // TestPresignedURLScheme 测试预签名URL的协议配置
 func TestPresignedURLScheme(t *testing.T) {
-	setupPresignTestConfig()
+	setupPresignTestConfig(t)
 
 	testCases := []struct {
 		name           string
@@ -292,7 +293,7 @@ func TestPresignedURLScheme(t *testing.T) {
 
 // TestPresignedURLHost 测试不同Host配置
 func TestPresignedURLHost(t *testing.T) {
-	setupPresignTestConfig()
+	setupPresignTestConfig(t)
 
 	testCases := []struct {
 		name         string
@@ -398,7 +399,7 @@ func TestGetCanonicalQueryStringForPresign(t *testing.T) {
 
 // TestPresignedURLExpiration 测试预签名URL过期时间
 func TestPresignedURLExpiration(t *testing.T) {
-	setupPresignTestConfig()
+	setupPresignTestConfig(t)
 
 	testCases := []struct {
 		name            string
@@ -446,7 +447,7 @@ func TestPresignedURLExpiration(t *testing.T) {
 
 // TestPresignedURLSignature 测试预签名URL签名
 func TestPresignedURLSignature(t *testing.T) {
-	setupPresignTestConfig()
+	setupPresignTestConfig(t)
 
 	// 生成两个相同参数的URL
 	url1 := GeneratePresignedURL("GET", "bucket", "key", time.Hour)
@@ -470,7 +471,7 @@ func TestPresignedURLSignature(t *testing.T) {
 
 // TestPresignedURLDifferentMethods 测试不同HTTP方法的签名
 func TestPresignedURLDifferentMethods(t *testing.T) {
-	setupPresignTestConfig()
+	setupPresignTestConfig(t)
 
 	methods := []string{"GET", "PUT", "POST", "DELETE", "HEAD"}
 
@@ -502,7 +503,7 @@ func TestPresignedURLDifferentMethods(t *testing.T) {
 
 // TestPresignedURLRegion 测试不同区域的签名
 func TestPresignedURLRegion(t *testing.T) {
-	setupPresignTestConfig()
+	setupPresignTestConfig(t)
 
 	regions := []string{"us-east-1", "us-west-2", "eu-west-1", "ap-northeast-1", "cn-north-1"}
 
@@ -531,7 +532,7 @@ func TestPresignedURLRegion(t *testing.T) {
 
 // TestPresignedURLContentLengthLimit 测试内容长度限制与全局限制的交互
 func TestPresignedURLContentLengthLimit(t *testing.T) {
-	setupPresignTestConfig()
+	setupPresignTestConfig(t)
 
 	// 设置全局最大上传大小为1GB
 	config.Global.Storage.MaxUploadSize = 1024 * 1024 * 1024
@@ -556,8 +557,8 @@ func TestPresignedURLContentLengthLimit(t *testing.T) {
 		},
 		{
 			name:               "大于全局限制应被截断",
-			maxContentLength:   2 * 1024 * 1024 * 1024,     // 2GB
-			globalMaxUpload:    1024 * 1024 * 1024,         // 1GB
+			maxContentLength:   2 * 1024 * 1024 * 1024, // 2GB
+			globalMaxUpload:    1024 * 1024 * 1024,     // 1GB
 			expectedLessThanEq: 1024 * 1024 * 1024,
 		},
 	}
@@ -589,7 +590,7 @@ func TestPresignedURLContentLengthLimit(t *testing.T) {
 
 // TestPresignedURLCredentialFormat 测试Credential格式
 func TestPresignedURLCredentialFormat(t *testing.T) {
-	setupPresignTestConfig()
+	setupPresignTestConfig(t)
 	config.Global.Auth.AccessKeyID = "AKIAIOSFODNN7EXAMPLE"
 	config.Global.Server.Region = "us-east-1"
 
@@ -632,7 +633,7 @@ func TestPresignedURLCredentialFormat(t *testing.T) {
 
 // TestPresignedURLDateFormat 测试日期格式
 func TestPresignedURLDateFormat(t *testing.T) {
-	setupPresignTestConfig()
+	setupPresignTestConfig(t)
 
 	result := GeneratePresignedURL("GET", "bucket", "key", time.Hour)
 
@@ -659,7 +660,7 @@ func TestPresignedURLDateFormat(t *testing.T) {
 
 // BenchmarkGeneratePresignedURL 预签名URL生成性能测试
 func BenchmarkGeneratePresignedURL(b *testing.B) {
-	setupPresignTestConfig()
+	setupPresignTestConfig(b)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -669,7 +670,7 @@ func BenchmarkGeneratePresignedURL(b *testing.B) {
 
 // BenchmarkGeneratePresignedURLWithOptions 带选项预签名URL生成性能测试
 func BenchmarkGeneratePresignedURLWithOptions(b *testing.B) {
-	setupPresignTestConfig()
+	setupPresignTestConfig(b)
 
 	opts := &PresignOptions{
 		Expires:          time.Hour,

@@ -147,6 +147,7 @@ type ListBucketResult struct {
 	Name           string         `xml:"Name"`
 	Prefix         string         `xml:"Prefix"`
 	Marker         string         `xml:"Marker"`
+	NextMarker     string         `xml:"NextMarker,omitempty"`
 	MaxKeys        int            `xml:"MaxKeys"`
 	IsTruncated    bool           `xml:"IsTruncated"`
 	Contents       []ObjectInfo   `xml:"Contents"`
@@ -201,8 +202,14 @@ func (s *Server) handleListObjects(w http.ResponseWriter, r *http.Request, bucke
 	maxKeysStr := query.Get("max-keys")
 	maxKeys := 1000
 	if maxKeysStr != "" {
-		if n, err := strconv.Atoi(maxKeysStr); err == nil && n > 0 {
-			maxKeys = n
+		n, err := strconv.Atoi(maxKeysStr)
+		if err != nil || n < 0 {
+			utils.WriteError(w, utils.ErrInvalidArgument, 400, r.URL.Path)
+			return
+		}
+		maxKeys = n
+		if maxKeys > 1000 {
+			maxKeys = 1000
 		}
 	}
 
@@ -269,6 +276,7 @@ func (s *Server) handleListObjects(w http.ResponseWriter, r *http.Request, bucke
 			Name:        bucket,
 			Prefix:      prefix,
 			Marker:      marker,
+			NextMarker:  result.NextMarker,
 			MaxKeys:     maxKeys,
 			IsTruncated: result.IsTruncated,
 		}

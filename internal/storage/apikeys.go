@@ -61,6 +61,9 @@ func NewAPIKeyCache(store *MetadataStore) *APIKeyCache {
 func (c *APIKeyCache) Reload() error {
 	keys, err := c.store.ListAPIKeysWithPermissions()
 	if err != nil {
+		c.mu.Lock()
+		c.keys = make(map[string]*CachedAPIKey)
+		c.mu.Unlock()
 		return err
 	}
 
@@ -373,4 +376,54 @@ func generateRandomKey(length int) string {
 		panic("crypto/rand unavailable: " + err.Error())
 	}
 	return hex.EncodeToString(bytes)
+}
+
+// ImportLegacyAPIKey performs a one-time, explicitly requested import. Existing
+// managed keys are never overwritten, including disabled or rotated credentials.
+func (m *MetadataStore) ImportLegacyAPIKey(id, secret string) error {
+	if id == "" || secret == "" {
+		return nil
+	}
+	encrypted, err := m.EncryptSecret(secret)
+	if err != nil {
+		return err
+	}
+	return m.withWriteLock(func() error {
+		tx, err := m.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		result, err := tx.Exec("INSERT OR IGNORE INTO api_keys (access_key_id,secret_access_key,description,created_at,enabled) VALUES (?,?,?,?,1)", id, encrypted, "Imported legacy key", time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		if n, _ := result.RowsAffected(); n > 0 {
+			if _, err = tx.Exec("INSERT INTO api_key_permissions (access_key_id,bucket_name,can_read,can_write) VALUES (?, '*',1,1)", id); err != nil {
+				return err
+			}
+		}
+		return tx.Commit()
+	})
+}
+
+func (m *MetadataStore) UpdateAPIKey(id string, description *string, enabled *bool) error {
+	return m.withWriteLock(func() error {
+		tx, err := m.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if description != nil {
+			if _, err := tx.Exec("UPDATE api_keys SET description=? WHERE access_key_id=?", *description, id); err != nil {
+				return err
+			}
+		}
+		if enabled != nil {
+			if _, err := tx.Exec("UPDATE api_keys SET enabled=? WHERE access_key_id=?", *enabled, id); err != nil {
+				return err
+			}
+		}
+		return tx.Commit()
+	})
 }

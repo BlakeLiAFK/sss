@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"sss/internal/auth"
@@ -76,7 +77,7 @@ func (h *Handler) handleSetupAPI(w http.ResponseWriter, r *http.Request) {
 // handleSystemStatus 获取系统状态
 func (h *Handler) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
@@ -95,8 +96,10 @@ func (h *Handler) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 
 // handleInstall 处理安装请求
 func (h *Handler) handleInstall(w http.ResponseWriter, r *http.Request) {
+	setupMu.Lock()
+	defer setupMu.Unlock()
 	if r.Method != http.MethodPost {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
@@ -108,7 +111,7 @@ func (h *Handler) handleInstall(w http.ResponseWriter, r *http.Request) {
 
 	var req SetupRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
-		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 		return
 	}
 
@@ -141,27 +144,10 @@ func (h *Handler) handleInstall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 初始化配置（返回生成的 API Key）
-	result, err := h.metadata.InitDefaultSettingsWithResult(req.AdminUsername, req.AdminPassword)
+	result, err := h.metadata.InstallSystem(req.AdminUsername, req.AdminPassword, req.ServerRegion)
 	if err != nil {
 		utils.Error("初始化配置失败", "error", err)
 		utils.WriteErrorResponse(w, "InternalError", "初始化配置失败", http.StatusInternalServerError)
-		return
-	}
-
-	// 存储 API Key 到配置（兼容旧版）
-	h.metadata.SetSetting(storage.SettingAuthAccessKeyID, result.AccessKeyID)
-	h.metadata.SetSetting(storage.SettingAuthSecretAccessKey, result.SecretAccessKey)
-
-	// 设置自定义配置
-	h.metadata.SetSetting(storage.SettingServerHost, req.ServerHost)
-	h.metadata.SetSetting(storage.SettingServerPort, req.ServerPort)
-	h.metadata.SetSetting(storage.SettingServerRegion, req.ServerRegion)
-	h.metadata.SetSetting(storage.SettingStorageDataPath, req.StorageDataPath)
-
-	// 标记为已安装
-	if err := h.metadata.SetInstalled(); err != nil {
-		utils.Error("设置安装状态失败", "error", err)
-		utils.WriteErrorResponse(w, "InternalError", "设置安装状态失败", http.StatusInternalServerError)
 		return
 	}
 
@@ -185,7 +171,7 @@ func (h *Handler) handleInstall(w http.ResponseWriter, r *http.Request) {
 // handleResetPasswordCheck 检测密码重置文件是否存在
 func (h *Handler) handleResetPasswordCheck(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
@@ -205,13 +191,15 @@ func (h *Handler) handleResetPasswordCheck(w http.ResponseWriter, r *http.Reques
 
 // handleResetPassword 重置密码
 func (h *Handler) handleResetPassword(w http.ResponseWriter, r *http.Request) {
+	setupMu.Lock()
+	defer setupMu.Unlock()
 	if r.Method != http.MethodPost {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
 	// 检测重置文件是否存在
-	if _, err := os.Stat(resetPasswordFile); os.IsNotExist(err) {
+	if info, err := os.Stat(resetPasswordFile); err != nil || !info.Mode().IsRegular() {
 		utils.WriteErrorResponse(w, "ResetFileNotFound",
 			"密码重置文件不存在，请先在服务器执行 touch "+resetPasswordFile,
 			http.StatusForbidden)
@@ -220,7 +208,7 @@ func (h *Handler) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	var req ResetPasswordRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
-		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 		return
 	}
 
@@ -235,15 +223,18 @@ func (h *Handler) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Consume authorization before changing credentials. A failed consume must
+	// never leave a successfully reusable reset capability.
+	if err := os.Remove(resetPasswordFile); err != nil {
+		utils.WriteErrorResponse(w, "ResetFileNotFound", "Cannot consume reset authorization", 403)
+		return
+	}
 	// 更新密码
 	if err := h.metadata.SetAdminPassword(req.NewPassword); err != nil {
 		utils.Error("重置密码失败", "error", err)
 		utils.WriteErrorResponse(w, "InternalError", "重置密码失败", http.StatusInternalServerError)
 		return
 	}
-
-	// 删除重置文件
-	os.Remove(resetPasswordFile)
 
 	// 清除所有会话（强制重新登录）
 	sessionStore.mu.Lock()
@@ -266,3 +257,5 @@ func ReloadConfigFromDB(metadata *storage.MetadataStore) {
 	// 重新加载 API Key 缓存
 	auth.ReloadAPIKeyCache()
 }
+
+var setupMu sync.Mutex

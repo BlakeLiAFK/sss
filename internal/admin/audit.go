@@ -21,7 +21,7 @@ type AuditLogResponse struct {
 // handleAuditLogs 处理审计日志查询
 func (h *Handler) handleAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
@@ -40,32 +40,39 @@ func (h *Handler) handleAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if resource := r.URL.Query().Get("resource"); resource != "" {
 		query.Resource = resource
 	}
-	if startTime := r.URL.Query().Get("start_time"); startTime != "" {
-		if t, err := time.Parse(time.RFC3339, startTime); err == nil {
-			query.StartTime = &t
+
+	for name, dest := range map[string]**time.Time{"start_time": &query.StartTime, "end_time": &query.EndTime} {
+		if value := r.URL.Query().Get(name); value != "" {
+			stamp, err := time.Parse(time.RFC3339, value)
+			if err != nil {
+				writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+				return
+			}
+			*dest = &stamp
 		}
 	}
-	if endTime := r.URL.Query().Get("end_time"); endTime != "" {
-		if t, err := time.Parse(time.RFC3339, endTime); err == nil {
-			query.EndTime = &t
-		}
+	if query.StartTime != nil && query.EndTime != nil && query.StartTime.After(*query.EndTime) {
+		writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+		return
 	}
-	if success := r.URL.Query().Get("success"); success != "" {
-		b := success == "true" || success == "1"
+	if value := r.URL.Query().Get("success"); value != "" {
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+			return
+		}
 		query.Success = &b
 	}
-
-	// 分页参数
 	page := 1
-	if p := r.URL.Query().Get("page"); p != "" {
-		if v, err := strconv.Atoi(p); err == nil && v > 0 {
-			page = v
-		}
-	}
 	query.Limit = 50
-	if limit := r.URL.Query().Get("limit"); limit != "" {
-		if v, err := strconv.Atoi(limit); err == nil && v > 0 && v <= 100 {
-			query.Limit = v
+	for name, dest := range map[string]*int{"page": &page, "limit": &query.Limit} {
+		if value := r.URL.Query().Get(name); value != "" {
+			n, err := strconv.Atoi(value)
+			if err != nil || n < 1 || n > 1000000 || (name == "limit" && n > 100) {
+				writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+				return
+			}
+			*dest = n
 		}
 	}
 	query.Offset = (page - 1) * query.Limit
@@ -73,7 +80,7 @@ func (h *Handler) handleAuditLogs(w http.ResponseWriter, r *http.Request) {
 	logs, total, err := h.metadata.QueryAuditLogs(query)
 	if err != nil {
 		utils.Error("查询审计日志失败", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -88,14 +95,14 @@ func (h *Handler) handleAuditLogs(w http.ResponseWriter, r *http.Request) {
 // handleAuditStats 获取审计统计
 func (h *Handler) handleAuditStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
 	stats, err := h.metadata.GetAuditStats()
 	if err != nil {
 		utils.Error("获取审计统计失败", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 

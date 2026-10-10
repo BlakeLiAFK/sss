@@ -69,6 +69,9 @@ func setupS3AuthTest(t *testing.T) (*Server, func()) {
 	}
 
 	// 初始化API Key缓存
+	if err := metadata.ImportLegacyAPIKey(config.Global.Auth.AccessKeyID, config.Global.Auth.SecretAccessKey); err != nil {
+		t.Fatal(err)
+	}
 	auth.InitAPIKeyCache(metadata)
 
 	// 创建服务器

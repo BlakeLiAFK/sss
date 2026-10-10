@@ -102,8 +102,8 @@ func TestHandleGetObject(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			expectedBody:   string(testContent),
 			checkHeaders: map[string]string{
-				"Content-Type":   "text/plain",
-				"Accept-Ranges":  "bytes",
+				"Content-Type":  "text/plain",
+				"Accept-Ranges": "bytes",
 			},
 		},
 		{
@@ -519,6 +519,7 @@ func TestHandleCopyObject(t *testing.T) {
 			}
 			rec := httptest.NewRecorder()
 
+			req = authorizedUnitRequest(t, server, req)
 			server.handleCopyObject(rec, req, tc.destBucket, tc.destKey)
 
 			if rec.Code != tc.expectedStatus {
@@ -573,6 +574,7 @@ func TestHandleCopyObjectPathTraversal(t *testing.T) {
 			req.Header.Set("x-amz-copy-source", tc.copySource)
 			rec := httptest.NewRecorder()
 
+			req = authorizedUnitRequest(t, server, req)
 			server.handleCopyObject(rec, req, "secure-bucket", "target.txt")
 
 			if rec.Code != http.StatusBadRequest {
@@ -596,6 +598,7 @@ func TestHandleCopyObjectURLEncoding(t *testing.T) {
 		req.Header.Set("x-amz-copy-source", "/encoding-bucket/%E4%B8%AD%E6%96%87%E6%96%87%E4%BB%B6.txt")
 		rec := httptest.NewRecorder()
 
+		req = authorizedUnitRequest(t, server, req)
 		server.handleCopyObject(rec, req, "encoding-bucket", "copied-file.txt")
 
 		if rec.Code != http.StatusOK {

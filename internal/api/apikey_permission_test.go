@@ -12,8 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	appconfig "sss/internal/config"
 	"sss/internal/auth"
+	appconfig "sss/internal/config"
 	"sss/internal/storage"
 	"sss/internal/utils"
 )
@@ -56,6 +56,9 @@ func TestAPIKeyWithoutPermission(t *testing.T) {
 		},
 	}
 
+	if err := metadata.ImportLegacyAPIKey(appconfig.Global.Auth.AccessKeyID, appconfig.Global.Auth.SecretAccessKey); err != nil {
+		t.Fatal(err)
+	}
 	auth.InitAPIKeyCache(metadata)
 
 	server := NewServer(metadata, filestore)
@@ -217,6 +220,9 @@ func TestAPIKeyWithWildcardPermission(t *testing.T) {
 		},
 	}
 
+	if err := metadata.ImportLegacyAPIKey(appconfig.Global.Auth.AccessKeyID, appconfig.Global.Auth.SecretAccessKey); err != nil {
+		t.Fatal(err)
+	}
 	auth.InitAPIKeyCache(metadata)
 
 	server := NewServer(metadata, filestore)
@@ -327,6 +333,9 @@ func TestDisabledAPIKey(t *testing.T) {
 		},
 	}
 
+	if err := metadata.ImportLegacyAPIKey(appconfig.Global.Auth.AccessKeyID, appconfig.Global.Auth.SecretAccessKey); err != nil {
+		t.Fatal(err)
+	}
 	auth.InitAPIKeyCache(metadata)
 
 	server := NewServer(metadata, filestore)

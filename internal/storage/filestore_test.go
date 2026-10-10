@@ -609,7 +609,7 @@ func TestMultipartUpload(t *testing.T) {
 
 	t.Run("合并分片", func(t *testing.T) {
 		partNumbers := []int{1, 2, 3}
-		etag, totalSize, err := fs.MergeParts(bucket, key, uploadID, partNumbers)
+		path, etag, totalSize, err := fs.MergeParts(bucket, key, uploadID, partNumbers)
 		if err != nil {
 			t.Fatalf("合并分片失败: %v", err)
 		}
@@ -621,10 +621,6 @@ func TestMultipartUpload(t *testing.T) {
 			t.Errorf("合并后大小不匹配: got %d, want %d", totalSize, expectedSize)
 		}
 		// 验证合并后的文件
-		path, err := fs.getPath(bucket, key)
-		if err != nil {
-			t.Fatalf("获取路径失败: %v", err)
-		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("读取合并文件失败: %v", err)

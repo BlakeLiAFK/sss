@@ -34,7 +34,7 @@ func (h *Handler) handleAdminBucketsAPI(w http.ResponseWriter, r *http.Request) 
 	case http.MethodPost:
 		h.adminCreateBucket(w, r)
 	default:
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 	}
 }
 
@@ -43,7 +43,7 @@ func (h *Handler) adminListBuckets(w http.ResponseWriter, r *http.Request) {
 	buckets, err := h.metadata.ListBuckets()
 	if err != nil {
 		utils.Error("list buckets failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -63,7 +63,7 @@ func (h *Handler) adminListBuckets(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) adminCreateBucket(w http.ResponseWriter, r *http.Request) {
 	var req CreateBucketRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
-		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 		return
 	}
 
@@ -82,7 +82,7 @@ func (h *Handler) adminCreateBucket(w http.ResponseWriter, r *http.Request) {
 	existing, err := h.metadata.GetBucket(req.Name)
 	if err != nil {
 		utils.Error("check bucket failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 	if existing != nil {
@@ -93,7 +93,7 @@ func (h *Handler) adminCreateBucket(w http.ResponseWriter, r *http.Request) {
 	// 创建桶
 	if err := h.metadata.CreateBucket(req.Name); err != nil {
 		utils.Error("create bucket failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -102,7 +102,7 @@ func (h *Handler) adminCreateBucket(w http.ResponseWriter, r *http.Request) {
 		utils.Error("create bucket dir failed", "error", err)
 		// 回滚数据库
 		h.metadata.DeleteBucket(req.Name)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
@@ -129,11 +129,11 @@ func (h *Handler) handleAdminBucketOps(w http.ResponseWriter, r *http.Request, p
 	bucket, err := h.metadata.GetBucket(bucketName)
 	if err != nil {
 		utils.Error("check bucket failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 	if bucket == nil {
-		utils.WriteError(w, utils.ErrNoSuchBucket, http.StatusNotFound, "")
+		writeAdminError(w, utils.ErrNoSuchBucket, http.StatusNotFound, "")
 		return
 	}
 
@@ -148,27 +148,11 @@ func (h *Handler) handleAdminBucketOps(w http.ResponseWriter, r *http.Request, p
 				IsPublic:     bucket.IsPublic,
 			})
 		case http.MethodPut:
-			// 更新桶设置（公开状态）
-			var req struct {
-				IsPublic bool `json:"isPublic"`
-			}
-			if err := utils.ParseJSONBody(r, &req); err != nil {
-				utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
-				return
-			}
-			if err := h.metadata.UpdateBucketPublic(bucketName, req.IsPublic); err != nil {
-				utils.Error("update bucket public failed", "error", err)
-				utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
-				return
-			}
-			utils.WriteJSONResponse(w, map[string]interface{}{
-				"success":  true,
-				"isPublic": req.IsPublic,
-			})
+			h.adminSetBucketPublic(w, r, bucketName)
 		case http.MethodDelete:
 			h.adminDeleteBucket(w, r, bucketName)
 		default:
-			utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+			writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		}
 	} else {
 		action := parts[1]
@@ -204,7 +188,7 @@ func (h *Handler) adminDeleteBucket(w http.ResponseWriter, r *http.Request, buck
 			utils.WriteErrorResponse(w, "BucketNotEmpty", "Bucket is not empty", http.StatusConflict)
 		} else {
 			utils.Error("delete bucket failed", "error", err)
-			utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+			writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		}
 		return
 	}
@@ -222,27 +206,39 @@ func (h *Handler) adminDeleteBucket(w http.ResponseWriter, r *http.Request, buck
 func (h *Handler) adminSetBucketPublic(w http.ResponseWriter, r *http.Request, bucketName string) {
 	switch r.Method {
 	case http.MethodGet:
-		bucket, _ := h.metadata.GetBucket(bucketName)
-		utils.WriteJSONResponse(w, map[string]bool{"is_public": bucket.IsPublic})
-	case http.MethodPut:
-		var req SetBucketPublicRequest
-		if err := utils.ParseJSONBody(r, &req); err != nil {
-			utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		bucket, err := h.metadata.GetBucket(bucketName)
+		if err != nil {
+			writeAdminError(w, utils.ErrInternalError, 500, "")
 			return
 		}
-		if err := h.metadata.UpdateBucketPublic(bucketName, req.IsPublic); err != nil {
+		if bucket == nil {
+			writeAdminError(w, utils.ErrNoSuchBucket, 404, "")
+			return
+		}
+		utils.WriteJSONResponse(w, map[string]bool{"is_public": bucket.IsPublic})
+	case http.MethodPut:
+		var req utils.PublicRequest
+		if err := utils.ParseJSONBody(r, &req); err != nil {
+			writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+			return
+		}
+		if req.Value() == nil {
+			writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+			return
+		}
+		if err := h.metadata.UpdateBucketPublic(bucketName, *req.Value()); err != nil {
 			utils.Error("update bucket public failed", "error", err)
-			utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+			writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 			return
 		}
 		// 记录审计日志
-		if req.IsPublic {
+		if *req.Value() {
 			h.Audit(r, storage.AuditActionBucketSetPublic, "admin", bucketName, true, nil)
 		} else {
 			h.Audit(r, storage.AuditActionBucketSetPrivate, "admin", bucketName, true, nil)
 		}
-		utils.WriteJSONResponse(w, map[string]bool{"is_public": req.IsPublic})
+		utils.WriteJSONResponse(w, map[string]bool{"is_public": *req.Value()})
 	default:
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 	}
 }

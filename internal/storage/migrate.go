@@ -21,37 +21,39 @@ type MigrateConfig struct {
 	SourceAccessKey string `json:"sourceAccessKey"`
 	SourceSecretKey string `json:"sourceSecretKey"`
 	SourceBucket    string `json:"sourceBucket"`
-	SourcePrefix    string `json:"sourcePrefix"`    // 可选：只迁移指定前缀的对象
-	SourceRegion    string `json:"sourceRegion"`    // 可选：源服务区域
+	SourcePrefix    string `json:"sourcePrefix"` // 可选：只迁移指定前缀的对象
+	SourceRegion    string `json:"sourceRegion"` // 可选：源服务区域
 	TargetBucket    string `json:"targetBucket"`
-	TargetPrefix    string `json:"targetPrefix"`    // 可选：目标前缀
-	OverwriteExist  bool   `json:"overwriteExist"`  // 是否覆盖已存在的文件
+	TargetPrefix    string `json:"targetPrefix"`   // 可选：目标前缀
+	OverwriteExist  bool   `json:"overwriteExist"` // 是否覆盖已存在的文件
 }
 
 // MigrateProgress 迁移进度
 type MigrateProgress struct {
-	JobID         string     `json:"jobId"`
-	Status        string     `json:"status"` // pending, running, completed, failed, cancelled
-	TotalObjects  int        `json:"totalObjects"`
-	Completed     int        `json:"completed"`
-	Failed        int        `json:"failed"`
-	Skipped       int        `json:"skipped"`     // 跳过的已存在文件
-	TotalSize     int64      `json:"totalSize"`   // 总字节数
-	TransferSize  int64      `json:"transferSize"` // 已传输字节数
-	CurrentFile   string     `json:"currentFile,omitempty"`
-	StartTime     time.Time  `json:"startTime"`
-	EndTime       *time.Time `json:"endTime,omitempty"`
-	Error         string     `json:"error,omitempty"`
-	FailedObjects []string   `json:"failedObjects,omitempty"` // 失败的对象列表
+	JobID         string        `json:"jobId"`
+	Status        string        `json:"status"` // pending, running, completed, failed, cancelled
+	TotalObjects  int           `json:"totalObjects"`
+	Completed     int           `json:"completed"`
+	Failed        int           `json:"failed"`
+	Skipped       int           `json:"skipped"`      // 跳过的已存在文件
+	TotalSize     int64         `json:"totalSize"`    // 总字节数
+	TransferSize  int64         `json:"transferSize"` // 已传输字节数
+	CurrentFile   string        `json:"currentFile,omitempty"`
+	StartTime     time.Time     `json:"startTime"`
+	EndTime       *time.Time    `json:"endTime,omitempty"`
+	Error         string        `json:"error,omitempty"`
+	FailedObjects []string      `json:"failedObjects,omitempty"` // 失败的对象列表
 	Config        MigrateConfig `json:"config"`
 }
 
 // MigrateManager 迁移任务管理器
 type MigrateManager struct {
-	mu       sync.RWMutex
-	jobs     map[string]*MigrateProgress
-	metadata *MetadataStore
+	mu        sync.RWMutex
+	jobs      map[string]*MigrateProgress
+	metadata  *MetadataStore
 	fileStore *FileStore
+	cancels   map[string]context.CancelFunc
+	contexts  map[string]context.Context
 }
 
 // 全局迁移管理器
@@ -62,8 +64,8 @@ var migrateOnce sync.Once
 func GetMigrateManager(metadata *MetadataStore, fileStore *FileStore) *MigrateManager {
 	migrateOnce.Do(func() {
 		migrateManager = &MigrateManager{
-			jobs:     make(map[string]*MigrateProgress),
-			metadata: metadata,
+			jobs:      make(map[string]*MigrateProgress),
+			metadata:  metadata,
 			fileStore: fileStore,
 		}
 	})
@@ -126,6 +128,23 @@ func (m *MigrateManager) StartMigration(cfg MigrateConfig) (string, error) {
 	}
 
 	m.mu.Lock()
+	active := 0
+	for _, job := range m.jobs {
+		if job.Status == "pending" || job.Status == "running" {
+			active++
+		}
+	}
+	if active >= 16 {
+		m.mu.Unlock()
+		return "", fmt.Errorf("too many active migrations")
+	}
+	if m.cancels == nil {
+		m.cancels = make(map[string]context.CancelFunc)
+		m.contexts = make(map[string]context.Context)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m.contexts[jobID] = ctx
+	m.cancels[jobID] = cancel
 	m.jobs[jobID] = progress
 	m.mu.Unlock()
 
@@ -139,7 +158,7 @@ func (m *MigrateManager) StartMigration(cfg MigrateConfig) (string, error) {
 func (m *MigrateManager) GetProgress(jobID string) *MigrateProgress {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.jobs[jobID]
+	return snapshotProgress(m.jobs[jobID])
 }
 
 // GetAllJobs 获取所有任务
@@ -149,7 +168,7 @@ func (m *MigrateManager) GetAllJobs() []*MigrateProgress {
 
 	result := make([]*MigrateProgress, 0, len(m.jobs))
 	for _, job := range m.jobs {
-		result = append(result, job)
+		result = append(result, snapshotProgress(job))
 	}
 	return result
 }
@@ -168,6 +187,9 @@ func (m *MigrateManager) CancelMigration(jobID string) error {
 		return fmt.Errorf("job already finished")
 	}
 
+	if cancel := m.cancels[jobID]; cancel != nil {
+		cancel()
+	}
 	job.Status = "cancelled"
 	now := time.Now()
 	job.EndTime = &now
@@ -196,6 +218,14 @@ func (m *MigrateManager) DeleteJob(jobID string) error {
 func (m *MigrateManager) runMigration(jobID string, cfg MigrateConfig) {
 	m.mu.Lock()
 	progress := m.jobs[jobID]
+	if progress == nil || progress.Status != "pending" {
+		m.mu.Unlock()
+		return
+	}
+	ctx := m.contexts[jobID]
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	progress.Status = "running"
 	m.mu.Unlock()
 
@@ -211,11 +241,15 @@ func (m *MigrateManager) runMigration(jobID string, cfg MigrateConfig) {
 		}
 		now := time.Now()
 		progress.EndTime = &now
+		if cancel := m.cancels[jobID]; cancel != nil {
+			cancel()
+		}
+		delete(m.cancels, jobID)
+		delete(m.contexts, jobID)
 		m.mu.Unlock()
 	}()
 
 	// 创建 S3 客户端
-	ctx := context.Background()
 	s3Client, err := m.createS3Client(ctx, cfg)
 	if err != nil {
 		m.setError(progress, fmt.Sprintf("failed to create S3 client: %v", err))
@@ -293,6 +327,8 @@ func (m *MigrateManager) runMigration(jobID string, cfg MigrateConfig) {
 		}
 	}
 
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	slog.Info("迁移任务完成",
 		"jobId", jobID,
 		"total", progress.TotalObjects,
@@ -391,12 +427,21 @@ func (m *MigrateManager) transferObject(ctx context.Context, client *s3.Client, 
 		contentType = *getResp.ContentType
 	}
 
+	m.fileStore.MutationMu.Lock()
+	defer m.fileStore.MutationMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// 存储到本地
 	storagePath, etag, err := m.fileStore.PutObject(cfg.TargetBucket, targetKey, getResp.Body, size)
 	if err != nil {
 		return fmt.Errorf("failed to store object: %w", err)
 	}
 
+	if err := ctx.Err(); err != nil {
+		m.fileStore.DeleteObject(storagePath)
+		return err
+	}
 	// 保存元数据
 	obj := &Object{
 		Bucket:       cfg.TargetBucket,
@@ -421,6 +466,9 @@ func (m *MigrateManager) transferObject(ctx context.Context, client *s3.Client, 
 func (m *MigrateManager) setError(progress *MigrateProgress, errMsg string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if progress.Status == "cancelled" {
+		return
+	}
 	progress.Status = "failed"
 	progress.Error = errMsg
 	now := time.Now()
@@ -474,4 +522,18 @@ func (m *MigrateManager) GetJobStats() map[string]int {
 	}
 
 	return stats
+}
+
+func snapshotProgress(job *MigrateProgress) *MigrateProgress {
+	if job == nil {
+		return nil
+	}
+	snapshot := *job
+	snapshot.Config.SourceSecretKey = ""
+	snapshot.FailedObjects = append([]string(nil), job.FailedObjects...)
+	if job.EndTime != nil {
+		stamp := *job.EndTime
+		snapshot.EndTime = &stamp
+	}
+	return &snapshot
 }

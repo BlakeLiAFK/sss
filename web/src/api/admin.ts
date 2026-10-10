@@ -145,6 +145,7 @@ export async function checkIntegrity(verifyEtag = false, limit = 1000): Promise<
 // 修复完整性问题
 export async function repairIntegrity(issues?: IntegrityIssue[], verifyEtag = false, limit = 1000): Promise<IntegrityResult> {
   const resp = await axios.post(`${getBaseUrl()}/api/admin/storage/integrity`, {
+    repair: true,
     issues: issues || [],
     verify_etag: verifyEtag,
     limit
@@ -414,10 +415,8 @@ export async function generatePresignedUrl(options: PresignOptions): Promise<Pre
     contentType: options.contentType || ''
   }
 
-  const resp = await axios.post(`${getBaseUrl()}/api/presign`, requestBody, {
-    headers: {
-      'Content-Type': 'application/json'
-    }
+  const resp = await axios.post(`${getBaseUrl()}/api/admin/presign`, requestBody, {
+    headers: getAdminHeaders()
   })
 
   return resp.data

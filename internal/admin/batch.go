@@ -3,7 +3,9 @@ package admin
 import (
 	"archive/zip"
 	"io"
+	"mime"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -30,13 +32,13 @@ type BatchDownloadRequest struct {
 // batchDeleteObjects 批量删除对象
 func (h *Handler) batchDeleteObjects(w http.ResponseWriter, r *http.Request, bucketName string) {
 	if r.Method != http.MethodPost {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
 	var req BatchDeleteRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
-		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 		return
 	}
 
@@ -71,11 +73,6 @@ func (h *Handler) batchDeleteObjects(w http.ResponseWriter, r *http.Request, buc
 			continue
 		}
 
-		// 删除文件
-		if err := h.filestore.DeleteObject(obj.StoragePath); err != nil {
-			utils.Error("batch delete file failed", "key", key, "error", err)
-		}
-
 		// 删除元数据
 		if err := h.metadata.DeleteObject(bucketName, key); err != nil {
 			result.FailedCount++
@@ -92,13 +89,13 @@ func (h *Handler) batchDeleteObjects(w http.ResponseWriter, r *http.Request, buc
 // batchDownloadObjects 批量下载对象（打包为 ZIP）
 func (h *Handler) batchDownloadObjects(w http.ResponseWriter, r *http.Request, bucketName string) {
 	if r.Method != http.MethodPost {
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
 	var req BatchDownloadRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
-		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 		return
 	}
 
@@ -113,56 +110,58 @@ func (h *Handler) batchDownloadObjects(w http.ResponseWriter, r *http.Request, b
 		return
 	}
 
-	// 设置响应头
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+bucketName+"-batch.zip\"")
-
-	// 创建 ZIP 写入器
-	zipWriter := zip.NewWriter(w)
-	defer zipWriter.Close()
-
+	// Stage the archive before headers so missing or unreadable objects produce a
+	// JSON error instead of a deceptively successful partial ZIP.
+	archive, err := os.CreateTemp("", "sss-archive-*")
+	if err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
+	}
+	defer func() { archive.Close(); os.Remove(archive.Name()) }()
+	zipWriter := zip.NewWriter(archive)
 	for _, key := range req.Keys {
-		// 安全检查：防止路径遍历
-		if strings.Contains(key, "..") {
-			continue
-		}
-
-		// 获取对象元数据
 		obj, err := h.metadata.GetObject(bucketName, key)
 		if err != nil || obj == nil {
-			continue
+			zipWriter.Close()
+			writeAdminError(w, utils.ErrNoSuchKey, 404, "")
+			return
 		}
-
-		// 创建 ZIP 条目
-		header := &zip.FileHeader{
-			Name:     filepath.Base(key), // 使用文件名而非完整路径
-			Method:   zip.Deflate,
-			Modified: obj.LastModified,
-		}
-
-		// 如果有同名文件，使用完整路径
-		if containsDuplicate(req.Keys, key) {
-			header.Name = key
-		}
-
-		zipEntry, err := zipWriter.CreateHeader(header)
-		if err != nil {
-			utils.Error("create zip entry failed", "key", key, "error", err)
-			continue
-		}
-
-		// 读取并写入文件内容
 		reader, err := h.filestore.GetObject(obj.StoragePath)
 		if err != nil {
-			utils.Error("read file for zip failed", "key", key, "error", err)
-			continue
+			zipWriter.Close()
+			writeAdminError(w, utils.ErrInternalError, 500, "")
+			return
 		}
-
-		_, err = io.Copy(zipEntry, reader)
+		name := filepath.Base(key)
+		if containsDuplicate(req.Keys, key) {
+			name = key
+		}
+		if strings.Contains(name, "..") || strings.HasPrefix(name, "/") || strings.Contains(name, "\\") {
+			reader.Close()
+			zipWriter.Close()
+			writeAdminError(w, utils.ErrInvalidArgument, 400, "")
+			return
+		}
+		entry, err := zipWriter.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Deflate, Modified: obj.LastModified})
+		if err == nil {
+			_, err = io.Copy(entry, reader)
+		}
 		reader.Close()
 		if err != nil {
-			utils.Error("write to zip failed", "key", key, "error", err)
+			zipWriter.Close()
+			writeAdminError(w, utils.ErrInternalError, 500, "")
+			return
 		}
+	}
+	if err := zipWriter.Close(); err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
+	}
+	archive.Seek(0, io.SeekStart)
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": bucketName + "-batch.zip"}))
+	if _, err := io.Copy(w, archive); err != nil {
+		utils.Error("archive response failed", "error", err)
 	}
 }
 

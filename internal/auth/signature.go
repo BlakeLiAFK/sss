@@ -10,10 +10,10 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
-	"sss/internal/config"
 	"sss/internal/storage"
 	"sss/internal/utils"
 )
@@ -36,12 +36,6 @@ func ReloadAPIKeyCache() error {
 
 // CheckBucketPermission 检查 API Key 对桶的访问权限
 func CheckBucketPermission(accessKeyID, bucket string, needWrite bool) bool {
-	// 如果使用旧配置的管理员 Key，拥有全部权限
-	if config.Global.Auth.AccessKeyID != "" &&
-		accessKeyID == config.Global.Auth.AccessKeyID {
-		return true
-	}
-
 	// 从缓存检查权限
 	if apiKeyCache != nil {
 		return apiKeyCache.CheckPermission(accessKeyID, bucket, needWrite)
@@ -57,7 +51,7 @@ const (
 )
 
 // 解析 Authorization 头
-var authHeaderRegex = regexp.MustCompile(`AWS4-HMAC-SHA256\s+Credential=([^/]+)/(\d{8})/([^/]+)/s3/aws4_request,\s*SignedHeaders=([^,]+),\s*Signature=([a-f0-9]+)`)
+var authHeaderRegex = regexp.MustCompile(`^AWS4-HMAC-SHA256\s+Credential=([^/]+)/(\d{8})/([^/]+)/s3/aws4_request,\s*SignedHeaders=([^,]+),\s*Signature=([a-f0-9]{64})$`)
 
 // VerifyRequest 验证请求签名，返回是否验证成功
 func VerifyRequest(r *http.Request) bool {
@@ -89,6 +83,20 @@ func VerifyRequestAndGetAccessKey(r *http.Request) (string, bool) {
 	signedHeaders := matches[4]
 	signature := matches[5]
 
+	amzDate := r.Header.Get("X-Amz-Date")
+	stamp, err := time.Parse("20060102T150405Z", amzDate)
+	if err != nil || stamp.Format("20060102") != dateStr || time.Since(stamp) > 15*time.Minute || time.Until(stamp) > 15*time.Minute {
+		return "", false
+	}
+	if !strings.Contains(";"+signedHeaders+";", ";host;") || !strings.Contains(";"+signedHeaders+";", ";x-amz-date;") {
+		return "", false
+	}
+	payload := r.Header.Get("X-Amz-Content-Sha256")
+	if payload != "" && payload != unsignedPayload {
+		if b, err := hex.DecodeString(payload); err != nil || len(b) != 32 {
+			return "", false
+		}
+	}
 	// 获取对应的 Secret Key
 	secretKey := getSecretKey(accessKey)
 	if secretKey == "" {
@@ -98,7 +106,7 @@ func VerifyRequestAndGetAccessKey(r *http.Request) (string, bool) {
 
 	// 计算签名
 	calculatedSig := calculateSignatureWithSecret(r, dateStr, region, signedHeaders, secretKey)
-	if calculatedSig != signature {
+	if !hmac.Equal([]byte(calculatedSig), []byte(signature)) {
 		utils.Debug("signature mismatch", "calculated", calculatedSig, "provided", signature)
 		return "", false
 	}
@@ -108,12 +116,6 @@ func VerifyRequestAndGetAccessKey(r *http.Request) (string, bool) {
 
 // getSecretKey 获取 Access Key 对应的 Secret Key
 func getSecretKey(accessKeyID string) string {
-	// 先检查旧配置中的管理员 Key
-	if config.Global.Auth.AccessKeyID != "" &&
-		accessKeyID == config.Global.Auth.AccessKeyID {
-		return config.Global.Auth.SecretAccessKey
-	}
-
 	// 从缓存中获取
 	if apiKeyCache != nil {
 		if secret, ok := apiKeyCache.GetSecretKey(accessKeyID); ok {
@@ -223,7 +225,7 @@ func getCanonicalURI(path string) string {
 	// URI 编码，但保留斜杠
 	segments := strings.Split(path, "/")
 	for i, seg := range segments {
-		segments[i] = url.PathEscape(seg)
+		segments[i] = awsEscape(seg)
 	}
 	return strings.Join(segments, "/")
 }
@@ -248,7 +250,7 @@ func getCanonicalQueryString(query url.Values) string {
 		values := query[k]
 		sort.Strings(values)
 		for _, v := range values {
-			pairs = append(pairs, fmt.Sprintf("%s=%s", url.QueryEscape(k), url.QueryEscape(v)))
+			pairs = append(pairs, fmt.Sprintf("%s=%s", awsEscape(k), awsEscape(v)))
 		}
 	}
 
@@ -266,7 +268,7 @@ func verifyPresignedURL(r *http.Request) (string, bool) {
 	}
 	// Credential 格式: accessKey/date/region/s3/aws4_request
 	parts := strings.Split(credential, "/")
-	if len(parts) != 5 {
+	if len(parts) != 5 || parts[3] != "s3" || parts[4] != "aws4_request" || query.Get("X-Amz-Algorithm") != algorithm {
 		return "", false
 	}
 
@@ -293,9 +295,8 @@ func verifyPresignedURL(r *http.Request) (string, bool) {
 		return "", false
 	}
 
-	var expireSec int
-	fmt.Sscanf(expires, "%d", &expireSec)
-	if time.Now().After(t.Add(time.Duration(expireSec) * time.Second)) {
+	expireSec, err := strconv.Atoi(expires)
+	if err != nil || expireSec < 1 || expireSec > 604800 || time.Until(t) > 15*time.Minute || t.Format("20060102") != dateStr || time.Now().After(t.Add(time.Duration(expireSec)*time.Second)) {
 		utils.Debug("presigned URL expired")
 		return "", false
 	}
@@ -315,14 +316,7 @@ func verifyPresignedURL(r *http.Request) (string, bool) {
 		}
 	}
 
-	// 对URL路径进行解码，因为浏览器会自动编码中文字符
-	// 但生成预签名URL时使用的是原始未编码的路径
-	decodedPath, err := url.PathUnescape(r.URL.Path)
-	if err != nil {
-		utils.Debug("failed to decode path", "path", r.URL.Path, "error", err)
-		decodedPath = r.URL.Path // 解码失败则使用原路径
-	}
-	canonicalURI := decodedPath
+	canonicalURI := getCanonicalURI(r.URL.Path)
 	canonicalQuery := getCanonicalQueryString(queryWithoutSig)
 
 	headerList := strings.Split(signedHeaders, ";")
@@ -352,7 +346,7 @@ func verifyPresignedURL(r *http.Request) (string, bool) {
 	signingKey := deriveSigningKey(secretKey, dateStr, region)
 	calculatedSig := hex.EncodeToString(hmacSHA256(signingKey, []byte(stringToSign)))
 
-	if calculatedSig == providedSig {
+	if hmac.Equal([]byte(calculatedSig), []byte(providedSig)) {
 		return accessKeyID, true
 	}
 	return "", false
@@ -368,3 +362,5 @@ func GetPayloadHash(r *http.Request) string {
 	hash := sha256.Sum256(body)
 	return hex.EncodeToString(hash[:])
 }
+
+func awsEscape(value string) string { return strings.ReplaceAll(url.QueryEscape(value), "+", "%20") }

@@ -1385,7 +1385,7 @@ func TestHandleIntegrity(t *testing.T) {
 
 	t.Run("执行修复", func(t *testing.T) {
 		token := sessionStore.CreateSession()
-		body := `{"verify_etag":false,"limit":100,"issues":[]}`
+		body := `{"repair":true,"verify_etag":false,"limit":100,"issues":[]}`
 		req := httptest.NewRequest(http.MethodPost, "/api/admin/integrity", bytes.NewBufferString(body))
 		req.Header.Set("X-Admin-Token", token)
 		req.Header.Set("Content-Type", "application/json")
@@ -2096,7 +2096,7 @@ func TestGCEnhanced(t *testing.T) {
 		}
 	})
 
-	t.Run("扫描垃圾-无效过期时间使用默认值", func(t *testing.T) {
+	t.Run("扫描垃圾-无效过期时间应拒绝", func(t *testing.T) {
 		token := sessionStore.CreateSession()
 		req := httptest.NewRequest(http.MethodGet, "/api/admin/storage/gc?max_upload_age=invalid", nil)
 		req.Header.Set("X-Admin-Token", token)
@@ -2104,12 +2104,12 @@ func TestGCEnhanced(t *testing.T) {
 
 		handler.handleGC(rec, req)
 
-		if rec.Code != http.StatusOK {
-			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusOK, rec.Code)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusBadRequest, rec.Code)
 		}
 	})
 
-	t.Run("执行GC-无body使用默认值", func(t *testing.T) {
+	t.Run("执行GC-无body应拒绝", func(t *testing.T) {
 		token := sessionStore.CreateSession()
 		req := httptest.NewRequest(http.MethodPost, "/api/admin/storage/gc", nil)
 		req.Header.Set("X-Admin-Token", token)
@@ -2117,8 +2117,8 @@ func TestGCEnhanced(t *testing.T) {
 
 		handler.handleGC(rec, req)
 
-		if rec.Code != http.StatusOK {
-			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusOK, rec.Code)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusBadRequest, rec.Code)
 		}
 	})
 
@@ -2177,7 +2177,7 @@ func TestIntegrityEnhanced(t *testing.T) {
 
 	t.Run("修复-带limit参数", func(t *testing.T) {
 		token := sessionStore.CreateSession()
-		body := `{"verify_etag":true,"limit":50}`
+		body := `{"repair":true,"verify_etag":true,"limit":50}`
 		req := httptest.NewRequest(http.MethodPost, "/api/admin/storage/integrity", bytes.NewBufferString(body))
 		req.Header.Set("X-Admin-Token", token)
 		req.Header.Set("Content-Type", "application/json")
@@ -2203,7 +2203,7 @@ func TestIntegrityEnhanced(t *testing.T) {
 		}
 	})
 
-	t.Run("检查-无效limit使用默认值", func(t *testing.T) {
+	t.Run("检查-无效limit应拒绝", func(t *testing.T) {
 		token := sessionStore.CreateSession()
 		req := httptest.NewRequest(http.MethodGet, "/api/admin/storage/integrity?limit=invalid", nil)
 		req.Header.Set("X-Admin-Token", token)
@@ -2211,8 +2211,8 @@ func TestIntegrityEnhanced(t *testing.T) {
 
 		handler.handleIntegrity(rec, req)
 
-		if rec.Code != http.StatusOK {
-			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusOK, rec.Code)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("状态码错误: 期望 %d, 实际 %d", http.StatusBadRequest, rec.Code)
 		}
 	})
 }

@@ -24,6 +24,9 @@ func NewHandler(metadata *storage.MetadataStore, filestore *storage.FileStore) *
 
 // ServeHTTP 处理管理后台请求
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Body != nil && !strings.Contains(r.URL.Path, "/upload") && !strings.HasSuffix(r.URL.Path, "/geoip") {
+		r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
+	}
 	path := r.URL.Path
 
 	// 安装相关 API（无需认证）
@@ -97,3 +100,9 @@ func (h *Handler) route(w http.ResponseWriter, r *http.Request) {
 		utils.WriteErrorResponse(w, "NotFound", "API endpoint not found", http.StatusNotFound)
 	}
 }
+
+func writeAdminError(w http.ResponseWriter, e utils.S3Error, status int, resource string) {
+	utils.WriteErrorResponse(w, e.Code, e.Message, status)
+}
+
+func (h *Handler) IsAuthenticated(r *http.Request) bool { return h.checkAdminAuth(r) }

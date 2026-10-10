@@ -52,7 +52,7 @@ func (h *Handler) handleAPIKeys(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		h.createAPIKey(w, r)
 	default:
-		utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 	}
 }
 
@@ -61,13 +61,17 @@ func (h *Handler) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 	keys, err := h.metadata.ListAPIKeys()
 	if err != nil {
 		utils.Error("list api keys failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
 	result := make([]APIKeyResponse, 0, len(keys))
 	for _, key := range keys {
-		perms, _ := h.metadata.GetAPIKeyPermissions(key.AccessKeyID)
+		perms, err := h.metadata.GetAPIKeyPermissions(key.AccessKeyID)
+		if err != nil {
+			writeAdminError(w, utils.ErrInternalError, 500, "")
+			return
+		}
 		result = append(result, APIKeyResponse{
 			AccessKeyID: key.AccessKeyID,
 			Description: key.Description,
@@ -84,19 +88,22 @@ func (h *Handler) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	var req CreateAPIKeyRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
-		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 		return
 	}
 
 	key, err := h.metadata.CreateAPIKey(req.Description)
 	if err != nil {
 		utils.Error("create api key failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
 	// 刷新缓存
-	auth.ReloadAPIKeyCache()
+	if err := auth.ReloadAPIKeyCache(); err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
+	}
 
 	// 记录审计日志
 	h.Audit(r, storage.AuditActionAPIKeyCreate, "admin", key.AccessKeyID, true, map[string]string{
@@ -122,7 +129,7 @@ func (h *Handler) handleAPIKeyDetail(w http.ResponseWriter, r *http.Request, pat
 	key, err := h.metadata.GetAPIKey(accessKeyID)
 	if err != nil {
 		utils.Error("get api key failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 	if key == nil {
@@ -141,7 +148,7 @@ func (h *Handler) handleAPIKeyDetail(w http.ResponseWriter, r *http.Request, pat
 		case http.MethodDelete:
 			h.deleteAPIKey(w, r, accessKeyID)
 		default:
-			utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+			writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		}
 	} else {
 		// /api/admin/apikeys/{id}/permissions 或 /reset-secret
@@ -154,13 +161,13 @@ func (h *Handler) handleAPIKeyDetail(w http.ResponseWriter, r *http.Request, pat
 			case http.MethodDelete:
 				h.deleteAPIKeyPermission(w, r, accessKeyID)
 			default:
-				utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+				writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 			}
 		case "reset-secret":
 			if r.Method == http.MethodPost {
 				h.resetAPIKeySecret(w, r, accessKeyID)
 			} else {
-				utils.WriteError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
+				writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 			}
 		default:
 			utils.WriteErrorResponse(w, "NotFound", "API endpoint not found", http.StatusNotFound)
@@ -173,11 +180,19 @@ func (h *Handler) getAPIKey(w http.ResponseWriter, r *http.Request, accessKeyID 
 	key, err := h.metadata.GetAPIKey(accessKeyID)
 	if err != nil {
 		utils.Error("get api key failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
-	perms, _ := h.metadata.GetAPIKeyPermissions(accessKeyID)
+	if key == nil {
+		writeAdminError(w, utils.ErrInvalidAccessKeyId, 404, "")
+		return
+	}
+	perms, err := h.metadata.GetAPIKeyPermissions(accessKeyID)
+	if err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
+	}
 
 	utils.WriteJSONResponse(w, APIKeyResponse{
 		AccessKeyID: key.AccessKeyID,
@@ -192,28 +207,19 @@ func (h *Handler) getAPIKey(w http.ResponseWriter, r *http.Request, accessKeyID 
 func (h *Handler) updateAPIKey(w http.ResponseWriter, r *http.Request, accessKeyID string) {
 	var req UpdateAPIKeyRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
-		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 		return
 	}
 
-	if req.Description != nil {
-		if err := h.metadata.UpdateAPIKeyDescription(accessKeyID, *req.Description); err != nil {
-			utils.Error("update api key description failed", "error", err)
-			utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
-			return
-		}
+	if err := h.metadata.UpdateAPIKey(accessKeyID, req.Description, req.Enabled); err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
 	}
-
-	if req.Enabled != nil {
-		if err := h.metadata.UpdateAPIKeyEnabled(accessKeyID, *req.Enabled); err != nil {
-			utils.Error("update api key enabled failed", "error", err)
-			utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
-			return
-		}
-	}
-
 	// 刷新缓存
-	auth.ReloadAPIKeyCache()
+	if err := auth.ReloadAPIKeyCache(); err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
+	}
 
 	// 记录审计日志
 	h.Audit(r, storage.AuditActionAPIKeyUpdate, "admin", accessKeyID, true, nil)
@@ -225,12 +231,15 @@ func (h *Handler) updateAPIKey(w http.ResponseWriter, r *http.Request, accessKey
 func (h *Handler) deleteAPIKey(w http.ResponseWriter, r *http.Request, accessKeyID string) {
 	if err := h.metadata.DeleteAPIKey(accessKeyID); err != nil {
 		utils.Error("delete api key failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
 	// 刷新缓存
-	auth.ReloadAPIKeyCache()
+	if err := auth.ReloadAPIKeyCache(); err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
+	}
 
 	// 记录审计日志
 	h.Audit(r, storage.AuditActionAPIKeyDelete, "admin", accessKeyID, true, nil)
@@ -242,7 +251,7 @@ func (h *Handler) deleteAPIKey(w http.ResponseWriter, r *http.Request, accessKey
 func (h *Handler) setAPIKeyPermission(w http.ResponseWriter, r *http.Request, accessKeyID string) {
 	var req SetPermissionRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
-		utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
+		writeAdminError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 		return
 	}
 
@@ -256,7 +265,7 @@ func (h *Handler) setAPIKeyPermission(w http.ResponseWriter, r *http.Request, ac
 		bucket, err := h.metadata.GetBucket(req.BucketName)
 		if err != nil {
 			utils.Error("check bucket failed", "error", err)
-			utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+			writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 			return
 		}
 		if bucket == nil {
@@ -274,12 +283,15 @@ func (h *Handler) setAPIKeyPermission(w http.ResponseWriter, r *http.Request, ac
 
 	if err := h.metadata.SetAPIKeyPermission(perm); err != nil {
 		utils.Error("set api key permission failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
 	// 刷新缓存
-	auth.ReloadAPIKeyCache()
+	if err := auth.ReloadAPIKeyCache(); err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
+	}
 
 	// 记录审计日志
 	h.Audit(r, storage.AuditActionAPIKeySetPerm, "admin", accessKeyID, true, map[string]interface{}{
@@ -310,12 +322,15 @@ func (h *Handler) deleteAPIKeyPermission(w http.ResponseWriter, r *http.Request,
 
 	if err := h.metadata.DeleteAPIKeyPermission(accessKeyID, bucketName); err != nil {
 		utils.Error("delete api key permission failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
 	// 刷新缓存
-	auth.ReloadAPIKeyCache()
+	if err := auth.ReloadAPIKeyCache(); err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
+	}
 
 	// 记录审计日志
 	h.Audit(r, storage.AuditActionAPIKeyDelPerm, "admin", accessKeyID, true, map[string]string{
@@ -330,22 +345,33 @@ func (h *Handler) resetAPIKeySecret(w http.ResponseWriter, r *http.Request, acce
 	newSecret, err := h.metadata.ResetAPIKeySecret(accessKeyID)
 	if err != nil {
 		utils.Error("reset api key secret failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
 	// 刷新缓存
-	auth.ReloadAPIKeyCache()
+	if err := auth.ReloadAPIKeyCache(); err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
+	}
 
 	// 获取 API Key 详情
 	key, err := h.metadata.GetAPIKey(accessKeyID)
 	if err != nil {
 		utils.Error("get api key failed", "error", err)
-		utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
+		writeAdminError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 		return
 	}
 
-	perms, _ := h.metadata.GetAPIKeyPermissions(accessKeyID)
+	if key == nil {
+		writeAdminError(w, utils.ErrInvalidAccessKeyId, 404, "")
+		return
+	}
+	perms, err := h.metadata.GetAPIKeyPermissions(accessKeyID)
+	if err != nil {
+		writeAdminError(w, utils.ErrInternalError, 500, "")
+		return
+	}
 
 	// 记录审计日志
 	h.Audit(r, storage.AuditActionAPIKeyResetSecret, "admin", accessKeyID, true, nil)

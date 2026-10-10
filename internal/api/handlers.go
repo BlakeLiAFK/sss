@@ -19,6 +19,7 @@ type contextKey string
 const (
 	// ContextKeyAccessKeyID 存储验证通过的 Access Key ID
 	ContextKeyAccessKeyID contextKey = "accessKeyID"
+	ContextKeyAdmin       contextKey = "adminPresign"
 )
 
 // Server S3服务器
@@ -45,12 +46,23 @@ func NewServer(metadata *storage.MetadataStore, filestore *storage.FileStore) *S
 func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/", s.handleRequest)
 	// Web管理界面API端点
-	s.mux.HandleFunc("/api/presign", s.handlePresign)
-	s.mux.HandleFunc("/api/bucket/", s.handleBucketAPI)
+	s.mux.HandleFunc("/api/presign", s.handleRequest)
+	s.mux.HandleFunc("/api/bucket/", s.handleRequest)
 }
 
 // ServeHTTP 实现 http.Handler
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Serialize mutations and maintenance against reads and migrations. This
+	// bounds condition checks and SQLite pointer commits to one operation.
+	if strings.HasPrefix(r.URL.Path, "/api/admin/migrate") {
+		// Cancellation must remain available during remote I/O.
+	} else if r.Method == "GET" || r.Method == "HEAD" || r.Method == "OPTIONS" {
+		s.filestore.MutationMu.RLock()
+		defer s.filestore.MutationMu.RUnlock()
+	} else {
+		s.filestore.MutationMu.Lock()
+		defer s.filestore.MutationMu.Unlock()
+	}
 	// 添加通用头部
 	w.Header().Set("Server", "SSS")
 	w.Header().Set("x-amz-request-id", utils.GenerateRequestID())
@@ -179,6 +191,14 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			s.handleHealth(w, r)
 			return
 		}
+		if r.URL.Path == "/api/admin/presign" {
+			if !s.adminHandler.IsAuthenticated(r) {
+				utils.WriteErrorResponse(w, "Unauthorized", "Admin session required", 401)
+				return
+			}
+			s.handlePresign(w, r.WithContext(context.WithValue(r.Context(), ContextKeyAdmin, true)))
+			return
+		}
 		// 安装相关 API 和管理员 API - 委托给 adminHandler
 		if strings.HasPrefix(r.URL.Path, "/api/setup") || strings.HasPrefix(r.URL.Path, "/api/admin/") {
 			s.adminHandler.ServeHTTP(w, r)
@@ -190,6 +210,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		r = newReq
+		defer r.Body.Close()
 		// 交给API处理器
 		if strings.HasPrefix(r.URL.Path, "/api/presign") {
 			s.handlePresign(w, r)
@@ -214,7 +235,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	var isPublicAccess bool
 	if bucket != "" {
 		// 检查桶是否为公有（只对GET/HEAD请求）
-		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		if (r.Method == http.MethodGet || r.Method == http.MethodHead) && !r.URL.Query().Has("uploadId") && !r.URL.Query().Has("uploads") && r.Header.Get("Authorization") == "" && !r.URL.Query().Has("X-Amz-Signature") {
 			if bucketInfo, err := s.metadata.GetBucket(bucket); err == nil && bucketInfo != nil && bucketInfo.IsPublic {
 				// 公有桶的GET/HEAD请求跳过认证
 				utils.Debug("public bucket access", "bucket", bucket, "method", r.Method)
@@ -229,6 +250,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			r = newReq
+			defer r.Body.Close()
 
 			// 检查桶权限（创建/删除桶只有旧配置的管理员 Key 能操作）
 			needWrite := r.Method != http.MethodGet && r.Method != http.MethodHead
@@ -243,6 +265,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		r = newReq
+		defer r.Body.Close()
 	}
 
 	// 重新解析路径（之前的bucket已经获取了）
@@ -253,6 +276,47 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// 检查是否是多段上传相关操作
 	query := r.URL.Query()
+
+	// Never reinterpret an unsupported subresource as an ordinary object mutation.
+	for name := range query {
+		if strings.HasPrefix(name, "X-Amz-") || strings.HasPrefix(name, "x-amz-") {
+			continue
+		}
+		switch name {
+		case "x-id", "uploads", "uploadId", "partNumber", "part-number-marker", "max-parts", "list-type", "prefix", "delimiter", "marker", "max-keys", "continuation-token", "start-after", "encoding-type":
+		default:
+			utils.WriteError(w, utils.S3Error{Code: "NotImplemented", Message: "Unsupported subresource"}, http.StatusNotImplemented, r.URL.Path)
+			return
+		}
+	}
+	if query.Has("uploads") || query.Has("uploadId") {
+		if key == "" || (query.Has("uploads") && query.Has("uploadId")) || (query.Has("uploadId") && query.Get("uploadId") == "") || r.Header.Get("x-amz-copy-source") != "" {
+			utils.WriteError(w, utils.S3Error{Code: "NotImplemented", Message: "Unsupported multipart operation"}, http.StatusNotImplemented, r.URL.Path)
+			return
+		}
+		if query.Has("uploads") {
+			if r.Method == "POST" {
+				s.handleInitiateMultipartUpload(w, r, bucket, key)
+			} else {
+				utils.WriteError(w, utils.ErrMethodNotAllowed, 405, r.URL.Path)
+			}
+			return
+		}
+		id := query.Get("uploadId")
+		switch r.Method {
+		case "PUT":
+			s.handleUploadPart(w, r, bucket, key, id)
+		case "POST":
+			s.handleCompleteMultipartUpload(w, r, bucket, key, id)
+		case "DELETE":
+			s.handleAbortMultipartUpload(w, r, bucket, key, id)
+		case "GET":
+			s.handleListParts(w, r, bucket, key, id)
+		default:
+			utils.WriteError(w, utils.ErrMethodNotAllowed, 405, r.URL.Path)
+		}
+		return
+	}
 
 	// 路由到具体处理器
 	switch {
@@ -275,33 +339,6 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// ListObjects - GET /{bucket}
 	case r.Method == "GET" && bucket != "" && key == "":
 		s.handleListObjects(w, r, bucket)
-
-	// Multipart Upload 操作
-	case query.Has("uploads"):
-		if r.Method == "POST" && key != "" {
-			// InitiateMultipartUpload
-			s.handleInitiateMultipartUpload(w, r, bucket, key)
-		} else if r.Method == "GET" {
-			// ListMultipartUploads (暂未实现)
-			w.WriteHeader(http.StatusNotImplemented)
-		}
-
-	case query.Get("uploadId") != "":
-		uploadID := query.Get("uploadId")
-		switch r.Method {
-		case "PUT":
-			// UploadPart
-			s.handleUploadPart(w, r, bucket, key, uploadID)
-		case "POST":
-			// CompleteMultipartUpload
-			s.handleCompleteMultipartUpload(w, r, bucket, key, uploadID)
-		case "DELETE":
-			// AbortMultipartUpload
-			s.handleAbortMultipartUpload(w, r, bucket, key, uploadID)
-		case "GET":
-			// ListParts
-			s.handleListParts(w, r, bucket, key, uploadID)
-		}
 
 	// GetObject - GET /{bucket}/{key}
 	case r.Method == "GET" && key != "":
@@ -397,13 +434,37 @@ func (s *Server) handlePresign(w http.ResponseWriter, r *http.Request) {
 	if req.ExpiresMinutes == 0 {
 		req.ExpiresMinutes = 60 // 默认1小时
 	}
-	if req.ExpiresMinutes > 7*24*60 { // 最大7天
-		req.ExpiresMinutes = 7 * 24 * 60
+	if req.ExpiresMinutes < 1 || req.ExpiresMinutes > 7*24*60 || req.MaxSizeMB < 0 || req.MaxSizeMB > 5*1024 || (req.Method != "GET" && req.Method != "HEAD" && req.Method != "PUT" && req.Method != "DELETE") {
+		utils.WriteError(w, utils.ErrInvalidArgument, 400, r.URL.Path)
+		return
+	}
+	if isAdmin, _ := r.Context().Value(ContextKeyAdmin).(bool); isAdmin {
+		keys, err := s.metadata.ListAPIKeys()
+		if err != nil {
+			utils.WriteErrorResponse(w, "InternalError", "Cannot load keys", 500)
+			return
+		}
+		identity := ""
+		for _, key := range keys {
+			if key.Enabled && auth.CheckBucketPermission(key.AccessKeyID, req.Bucket, req.Method != "GET" && req.Method != "HEAD") {
+				identity = key.AccessKeyID
+				break
+			}
+		}
+		if identity == "" {
+			utils.WriteErrorResponse(w, "NoSigningKey", "Create an enabled API key with the required bucket permission", 409)
+			return
+		}
+		r = r.WithContext(context.WithValue(r.Context(), ContextKeyAccessKeyID, identity))
+	}
+	if !s.checkBucketPermission(r, w, req.Bucket, req.Method != "GET" && req.Method != "HEAD") {
+		return
 	}
 
 	// 构建预签名选项
 	opts := &auth.PresignOptions{
 		Expires: time.Duration(req.ExpiresMinutes) * time.Minute,
+		Host:    r.Host,
 	}
 
 	// 设置大小限制（MB转字节）
@@ -417,7 +478,8 @@ func (s *Server) handlePresign(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 生成预签名URL
-	url := auth.GeneratePresignedURLWithOptions(req.Method, req.Bucket, req.Key, opts)
+	accessKey, _ := r.Context().Value(ContextKeyAccessKeyID).(string)
+	url := auth.GeneratePresignedURLForKey(req.Method, req.Bucket, req.Key, opts, accessKey)
 
 	// 构建响应
 	resp := PresignResponse{
@@ -445,6 +507,9 @@ func (s *Server) handleBucketAPI(w http.ResponseWriter, r *http.Request) {
 
 	bucketName := pathParts[2]
 	action := pathParts[3]
+	if len(pathParts) != 4 || !s.checkBucketPermission(r, w, bucketName, r.Method != http.MethodGet) {
+		return
+	}
 
 	switch action {
 	case "public":
@@ -467,12 +532,16 @@ func (s *Server) handleBucketPublicAPI(w http.ResponseWriter, r *http.Request, b
 
 	if r.Method == http.MethodPut {
 		// 设置桶的公有/私有状态
-		var req BucketPublicRequest
+		var req utils.PublicRequest
 		if err := utils.ParseJSONBody(r, &req); err != nil {
 			utils.WriteError(w, utils.ErrMalformedJSON, http.StatusBadRequest, "")
 			return
 		}
 
+		if req.Value() == nil {
+			utils.WriteError(w, utils.ErrInvalidArgument, 400, r.URL.Path)
+			return
+		}
 		// 检查桶是否存在
 		bucket, err := s.metadata.GetBucket(bucketName)
 		if err != nil {
@@ -486,13 +555,13 @@ func (s *Server) handleBucketPublicAPI(w http.ResponseWriter, r *http.Request, b
 		}
 
 		// 更新桶状态
-		if err := s.metadata.UpdateBucketPublic(bucketName, req.IsPublic); err != nil {
+		if err := s.metadata.UpdateBucketPublic(bucketName, *req.Value()); err != nil {
 			utils.Error("update bucket public status failed", "error", err)
 			utils.WriteError(w, utils.ErrInternalError, http.StatusInternalServerError, "")
 			return
 		}
 
-		utils.WriteJSONResponse(w, map[string]bool{"is_public": req.IsPublic})
+		utils.WriteJSONResponse(w, map[string]bool{"is_public": *req.Value()})
 	} else {
 		// GET 获取桶的公有/私有状态
 		bucket, err := s.metadata.GetBucket(bucketName)
@@ -642,6 +711,9 @@ func (s *Server) checkAuth(r *http.Request, w http.ResponseWriter) (*http.Reques
 		return nil, false
 	}
 
+	if !verifyPayload(w, r) {
+		return nil, false
+	}
 	// 将 accessKeyID 存入请求上下文
 	ctx := context.WithValue(r.Context(), ContextKeyAccessKeyID, accessKeyID)
 	return r.WithContext(ctx), true
@@ -664,8 +736,16 @@ func (s *Server) checkBucketPermission(r *http.Request, w http.ResponseWriter, b
 
 // handleHealth 健康检查端点 - 不需要认证
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" && r.Method != "HEAD" {
+		utils.WriteErrorResponse(w, "MethodNotAllowed", "GET or HEAD required", 405)
+		return
+	}
+	if _, err := s.metadata.ListBuckets(); err != nil {
+		utils.WriteErrorResponse(w, "NotReady", "Metadata unavailable", 503)
+		return
+	}
 	utils.WriteJSONResponse(w, map[string]interface{}{
 		"status":  "ok",
-		"version": "1.1.0",
+		"version": config.Version,
 	})
 }
