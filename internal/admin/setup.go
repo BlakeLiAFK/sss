@@ -157,7 +157,9 @@ func (h *Handler) handleInstall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 重新加载配置到全局
+	h.filestore.MutationMu.Lock()
 	ReloadConfigFromDB(h.metadata)
+	h.filestore.MutationMu.Unlock()
 
 	// 记录安装审计日志
 	h.Audit(r, storage.AuditActionSystemInstall, req.AdminUsername, "", true, map[string]string{

@@ -283,6 +283,9 @@ func (s *Server) handleCopyObject(w http.ResponseWriter, r *http.Request, destBu
 		return
 	}
 
+	if !checkCopySourceConditions(w, r, srcObj) {
+		return
+	}
 	if !s.checkWriteConditions(w, r, destBucket, destKey) {
 		return
 	}

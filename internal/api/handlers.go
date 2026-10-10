@@ -52,26 +52,17 @@ func (s *Server) setupRoutes() {
 
 // ServeHTTP 实现 http.Handler
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Serialize mutations and maintenance against reads and migrations. This
-	// bounds condition checks and SQLite pointer commits to one operation.
-	if strings.HasPrefix(r.URL.Path, "/api/admin/migrate") {
-		// Cancellation must remain available during remote I/O.
-	} else if r.Method == "GET" || r.Method == "HEAD" || r.Method == "OPTIONS" {
-		s.filestore.MutationMu.RLock()
-		defer s.filestore.MutationMu.RUnlock()
-	} else {
-		s.filestore.MutationMu.Lock()
-		defer s.filestore.MutationMu.Unlock()
-	}
 	// 添加通用头部
 	w.Header().Set("Server", "SSS")
 	w.Header().Set("x-amz-request-id", utils.GenerateRequestID())
 
 	// CORS 支持（使用可配置的来源）
+	s.filestore.MutationMu.RLock()
 	corsOrigin := "*"
 	if cfg := config.Global; cfg != nil && cfg.Security.CORSOrigin != "" {
 		corsOrigin = cfg.Security.CORSOrigin
 	}
+	s.filestore.MutationMu.RUnlock()
 	w.Header().Set("Access-Control-Allow-Origin", corsOrigin)
 	w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, POST, DELETE, HEAD, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "*")
@@ -85,8 +76,66 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	utils.Info("request", "method", r.Method, "path", r.URL.Path, "request_id", w.Header().Get("x-amz-request-id"))
 
 	// 记录 GeoStats（仅对 S3 API 请求，排除静态资源和管理 API）
+	s.filestore.MutationMu.RLock()
 	s.recordGeoStats(r)
+	s.filestore.MutationMu.RUnlock()
 
+	path := r.URL.Path
+	control := path == "/api/admin/login" || path == "/api/admin/logout" || strings.HasPrefix(path, "/api/setup") || strings.HasPrefix(path, "/api/admin/migrate") || path == "/api/health" || path == "/api/admin/settings/check-update"
+	isAdmin := strings.HasPrefix(path, "/api/admin/")
+	if isAdmin && path != "/api/admin/login" && !s.adminHandler.IsAuthenticated(r) {
+		utils.WriteErrorResponse(w, "Unauthorized", "Admin session required", 401)
+		return
+	}
+	hasS3Auth := r.Header.Get("Authorization") != "" || r.URL.Query().Get("X-Amz-Signature") != ""
+	if !control && ((r.Method != "GET" && r.Method != "HEAD") || (!isAdmin && hasS3Auth)) {
+		// Admit and stage requests before taking the storage mutation lock. Slow
+		// or unauthenticated clients cannot monopolize the consistency boundary.
+		if !isAdmin {
+			if _, ok := auth.VerifyRequestAndGetAccessKey(r); !ok {
+				utils.WriteError(w, utils.ErrAccessDenied, 403, path)
+				return
+			}
+			s.filestore.MutationMu.RLock()
+			limit := payloadLimit(r)
+			s.filestore.MutationMu.RUnlock()
+			if !verifyPayloadLimit(w, r, limit) {
+				return
+			}
+			r = r.WithContext(context.WithValue(r.Context(), contextKey("stagedPayload"), true))
+		} else {
+			s.filestore.MutationMu.RLock()
+			limit := int64(2 << 20)
+			if strings.HasSuffix(path, "/upload") {
+				// Admin uploads are multipart forms, but use the object limits.
+				limit = config.Global.Storage.MaxUploadSize
+				if limit <= 0 {
+					limit = 5 << 30
+				}
+				if n := config.Global.Storage.MaxObjectSize; n > 0 && n < limit {
+					limit = n
+				}
+				limit += 1 << 20
+			} else if strings.HasSuffix(path, "/geoip") {
+				limit = 100 << 20
+			}
+			s.filestore.MutationMu.RUnlock()
+			if err := utils.StageRequestBody(r, limit); err != nil {
+				utils.WriteErrorResponse(w, "InvalidRequest", "Cannot read bounded request body", 400)
+				return
+			}
+		}
+		defer r.Body.Close()
+	}
+	if !control {
+		if r.Method == "GET" || r.Method == "HEAD" {
+			s.filestore.MutationMu.RLock()
+			defer s.filestore.MutationMu.RUnlock()
+		} else {
+			s.filestore.MutationMu.Lock()
+			defer s.filestore.MutationMu.Unlock()
+		}
+	}
 	s.mux.ServeHTTP(w, r)
 }
 
@@ -726,7 +775,7 @@ func (s *Server) checkAuth(r *http.Request, w http.ResponseWriter) (*http.Reques
 		return nil, false
 	}
 
-	if !verifyPayload(w, r) {
+	if staged, _ := r.Context().Value(contextKey("stagedPayload")).(bool); !staged && !verifyPayload(w, r) {
 		return nil, false
 	}
 	// 将 accessKeyID 存入请求上下文

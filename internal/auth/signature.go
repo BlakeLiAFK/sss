@@ -99,6 +99,9 @@ func VerifyRequestAndGetAccessKey(r *http.Request) (string, bool) {
 	if !strings.Contains(";"+signedHeaders+";", ";host;") || !strings.Contains(";"+signedHeaders+";", ";"+dateHeader+";") {
 		return "", false
 	}
+	if !validSignedHeaders(r, signedHeaders, false) {
+		return "", false
+	}
 	payload := r.Header.Get("X-Amz-Content-Sha256")
 	if payload != "" && payload != unsignedPayload {
 		if b, err := hex.DecodeString(payload); err != nil || len(b) != 32 {
@@ -312,8 +315,8 @@ func verifyPresignedURL(r *http.Request) (string, bool) {
 	// 验证签名
 	providedSig := query.Get("X-Amz-Signature")
 	signedHeaders := query.Get("X-Amz-SignedHeaders")
-	if signedHeaders == "" {
-		signedHeaders = "host"
+	if !validSignedHeaders(r, signedHeaders, true) {
+		return "", false
 	}
 
 	// 创建规范请求（不包含 X-Amz-Signature）
@@ -372,3 +375,34 @@ func GetPayloadHash(r *http.Request) string {
 }
 
 func awsEscape(value string) string { return strings.ReplaceAll(url.QueryEscape(value), "+", "%20") }
+
+// Require every Amazon operation header to be authenticated. The payload hash
+// is already bound by the canonical payload line for header authentication.
+func validSignedHeaders(r *http.Request, names string, presigned bool) bool {
+	signed := make(map[string]bool)
+	previous := ""
+	for _, name := range strings.Split(names, ";") {
+		if name == "" || name != strings.ToLower(name) || (previous != "" && name <= previous) {
+			return false
+		}
+		if name != "host" && name != "content-length" && len(r.Header.Values(name)) == 0 {
+			return false
+		}
+		signed[name] = true
+		previous = name
+	}
+	if !signed["host"] {
+		return false
+	}
+	for name := range r.Header {
+		name = strings.ToLower(name)
+		if !strings.HasPrefix(name, "x-amz-") || signed[name] {
+			continue
+		}
+		if name == "x-amz-content-sha256" && (!presigned || r.Header.Get(name) == unsignedPayload) {
+			continue
+		}
+		return false
+	}
+	return true
+}

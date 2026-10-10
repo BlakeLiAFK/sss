@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +14,7 @@ import (
 	"sss/internal/config"
 	"sss/internal/storage"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -345,5 +348,174 @@ func TestAuditInvalidQueryCannotDeleteObject(t *testing.T) {
 	}
 	if w := auditRequest(s, key, "GET", "/audit-bucket/keep", "", nil); w.Body.String() != "original" {
 		t.Fatal("invalid query deleted object")
+	}
+}
+
+func TestAuditPresignCannotInjectCopySource(t *testing.T) {
+	s, key := auditServer(t)
+	if err := s.metadata.CreateBucket("private-source"); err != nil {
+		t.Fatal(err)
+	}
+	if w := auditRequest(s, key, "PUT", "/private-source/secret", "private bytes", nil); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	if err := s.metadata.UpdateBucketPublic("audit-bucket", true); err != nil {
+		t.Fatal(err)
+	}
+	signedURL := auth.GeneratePresignedURLForKey("PUT", "audit-bucket", "delegated", &auth.PresignOptions{Host: "example.com", Expires: time.Hour}, key.AccessKeyID)
+	for _, header := range []string{"X-Amz-Copy-Source", "X-Amz-Metadata-Directive", "X-Amz-Acl", "X-Amz-Tagging", "X-Amz-Meta-Owner"} {
+		r := httptest.NewRequest("PUT", signedURL, strings.NewReader(""))
+		r.Header.Set(header, "/private-source/secret")
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		if w.Code != 403 {
+			t.Errorf("unsigned %s accepted: %d %s", header, w.Code, w.Body.String())
+		}
+		// Header-authenticated requests must enforce the same boundary.
+		r = httptest.NewRequest("PUT", "/audit-bucket/delegated", strings.NewReader(""))
+		signRequest(r, key.AccessKeyID, key.SecretAccessKey, "us-east-1", []byte(""))
+		r.Header.Set(header, "/private-source/secret")
+		w = httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		if w.Code != 403 {
+			t.Errorf("unsigned header-auth %s accepted: %d", header, w.Code)
+		}
+
+	}
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, httptest.NewRequest("GET", "/audit-bucket/delegated", nil))
+	if w.Code != 404 {
+		t.Fatalf("delegated URL published private data: %d %q", w.Code, w.Body.String())
+	}
+	r := httptest.NewRequest("PUT", signedURL, strings.NewReader("ordinary upload"))
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatal("ordinary presigned upload rejected", w.Code, w.Body.String())
+	}
+}
+
+type auditSlowBody struct {
+	entered chan struct{}
+	release chan struct{}
+	reader  *strings.Reader
+	once    sync.Once
+}
+
+func (b *auditSlowBody) Read(p []byte) (int, error) {
+	b.once.Do(func() { close(b.entered); <-b.release })
+	return b.reader.Read(p)
+}
+func (b *auditSlowBody) Close() error { return nil }
+func TestAuditSlowRequestDoesNotHoldStorageLock(t *testing.T) {
+	for _, path := range []string{"/api/admin/login", "/api/setup/install", "/audit-bucket/slow"} {
+		t.Run(path, func(t *testing.T) {
+			s, key := auditServer(t)
+			if path == "/api/admin/login" {
+				if _, err := s.metadata.InstallSystem("admin", "TestPassword123!", "us-east-1"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if w := auditRequest(s, key, "PUT", "/audit-bucket/ready", "ready", nil); w.Code != 200 {
+				t.Fatal(w.Code)
+			}
+			body := &auditSlowBody{entered: make(chan struct{}), release: make(chan struct{}), reader: strings.NewReader("{")}
+			method := "POST"
+			if path == "/audit-bucket/slow" {
+				method = "PUT"
+			}
+			r := httptest.NewRequest(method, path, body)
+			r.ContentLength = -1
+			if method == "PUT" {
+				signRequest(r, key.AccessKeyID, key.SecretAccessKey, "us-east-1", []byte("{"))
+			}
+			done := make(chan struct{})
+			go func() { s.ServeHTTP(httptest.NewRecorder(), r); close(done) }()
+			defer func() { close(body.release); <-done }()
+			select {
+			case <-body.entered:
+			case <-time.After(3 * time.Second):
+				t.Fatal("slow body not reached")
+			}
+			for _, target := range []string{"/api/health", "/audit-bucket/ready"} {
+				result := make(chan int, 1)
+				go func() { result <- auditRequest(s, key, "GET", target, "", nil).Code }()
+				select {
+				case code := <-result:
+					if code != 200 {
+						t.Fatal(target, code)
+					}
+				case <-time.After(2 * time.Second):
+					t.Fatal("slow body blocked", target)
+				}
+			}
+		})
+	}
+}
+
+func TestAuditCopySourceConditions(t *testing.T) {
+	s, key := auditServer(t)
+	put := auditRequest(s, key, "PUT", "/audit-bucket/source", "source", nil)
+	etag := put.Header().Get("ETag")
+	past := time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat)
+	future := time.Now().Add(time.Hour).UTC().Format(http.TimeFormat)
+	for _, tc := range []struct {
+		name    string
+		headers map[string]string
+		code    int
+	}{
+		{"match fails", map[string]string{"X-Amz-Copy-Source-If-Match": `"wrong"`}, 412},
+		{"none fails", map[string]string{"X-Amz-Copy-Source-If-None-Match": etag}, 412},
+		{"modified fails", map[string]string{"X-Amz-Copy-Source-If-Modified-Since": future}, 412},
+		{"unmodified fails", map[string]string{"X-Amz-Copy-Source-If-Unmodified-Since": past}, 412},
+		{"bad date", map[string]string{"X-Amz-Copy-Source-If-Modified-Since": "nonsense"}, 400},
+		{"match wins", map[string]string{"X-Amz-Copy-Source-If-Match": etag, "X-Amz-Copy-Source-If-Unmodified-Since": past}, 200},
+		{"none still fails", map[string]string{"X-Amz-Copy-Source-If-None-Match": etag, "X-Amz-Copy-Source-If-Modified-Since": past}, 412},
+		{"modified succeeds", map[string]string{"X-Amz-Copy-Source-If-Modified-Since": past}, 200},
+		{"unmodified succeeds", map[string]string{"X-Amz-Copy-Source-If-Unmodified-Since": future}, 200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			auditRequest(s, key, "PUT", "/audit-bucket/dest", "old destination", nil)
+			tc.headers["X-Amz-Copy-Source"] = "/audit-bucket/source"
+			w := auditRequest(s, key, "PUT", "/audit-bucket/dest", "", tc.headers)
+			if w.Code != tc.code {
+				t.Fatal(w.Code, w.Body.String())
+			}
+			want := "old destination"
+			if tc.code == 200 {
+				want = "source"
+			}
+			if got := auditRequest(s, key, "GET", "/audit-bucket/dest", "", nil).Body.String(); got != want {
+				t.Fatal("destination damaged", got)
+			}
+		})
+	}
+}
+
+func TestAuditAWSSDKPresignedCopyHeaders(t *testing.T) {
+	s, key := auditServer(t)
+	auditRequest(s, key, "PUT", "/audit-bucket/source", "source", nil)
+	req := httptest.NewRequest("PUT", "http://example.com/audit-bucket/copied?X-Amz-Expires=300", nil)
+	req.Header.Set("X-Amz-Copy-Source", "/audit-bucket/source")
+	signer := v4.NewSigner(func(o *v4.SignerOptions) { o.DisableURIPathEscaping = true; o.DisableHeaderHoisting = true })
+	signedURL, headers, err := signer.PresignHTTP(context.Background(), aws.Credentials{AccessKeyID: key.AccessKeyID, SecretAccessKey: key.SecretAccessKey}, req, "UNSIGNED-PAYLOAD", "s3", "us-east-1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tamper := range []bool{false, true} {
+		r := httptest.NewRequest("PUT", signedURL, nil)
+		r.Header = headers.Clone()
+		if tamper {
+			r.Header.Set("X-Amz-Copy-Source", "/audit-bucket/other")
+		}
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		want := 200
+		if tamper {
+			want = 403
+		}
+		if w.Code != want {
+			t.Fatal(w.Code, w.Body.String())
+		}
 	}
 }

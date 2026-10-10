@@ -44,8 +44,12 @@ paths. New writes are immutable paths; deleted/replaced object blobs are reclaim
 by GC. Object publication is a SQLite pointer commit after file fsync. SQLite uses
 FULL synchronous mode. Blob directories are synced before publication.
 
-A FileStore read/write lock serializes HTTP mutations and coordinates migration
-writes against reads and maintenance. This intentionally favors correctness over
+A FileStore read/write lock serializes admitted storage mutations and coordinates
+migration writes against reads and maintenance. Authentication and bounded HTTP
+body staging happen before that lock; login/setup/session and migration-control
+handlers do not hold it while waiting on clients. Setup acquires it only for the
+short runtime configuration reload. Temporary request bodies live outside the
+object store, so concurrent GC cannot collect them. This intentionally favors correctness over
 parallel upload throughput. Cancellation endpoints do not take that lock so an
 in-flight remote transfer can be cancelled. Deploy one server process per store;
 shared-directory multi-process operation is not supported.
@@ -175,8 +179,8 @@ all deployment configurations. Evidence: `api/audit_regression_test.go`,
 ## Validation (2026-10-10, macOS arm64)
 
 - `go test ./... -count=1 -coverprofile=/tmp/sss-coverage.out`: passed. Total
-  statement coverage 65.6% (includes command/tool packages at 0%). Package coverage:
-  admin 64.2%, api 72.6%, auth 72.4%, config 80.7%, storage 67.9%, utils 65.1%.
+  statement coverage 65.8% (includes command/tool packages at 0%). Package coverage:
+  admin 64.2%, api 73.1%, auth 71.9%, config 80.7%, storage 68.9%, utils 59.8%.
   Coverage is statement execution, not proof of all failure modes.
 - `go test -race ./... -count=1`: passed all packages.
 - `go vet ./...`: passed.
@@ -215,3 +219,50 @@ limits of the performed verification, not a claim of complete AWS S3 support:
   not included in this API remediation; neither prevented the strict build.
 - No release, deployment, tag or workflow change. The existing release workflow
   runs only on `v*` tags or manual dispatch, not a master branch push.
+
+## Independent review follow-up
+
+The independent review after `f9764a4` found additional boundaries; the earlier
+completion statement was too broad. This follow-up adds these corrections and
+regressions:
+
+1. **Unsigned operation-header injection:** reproduced a host-only PUT presigned
+   URL accepting an appended `x-amz-copy-source` and returning CopyObject success
+   using the signing key's private-source access. Both query and header SigV4 now
+   require every present `x-amz-*` header to be in the signed set. The S3 payload
+   hash exception remains bound by the header-auth canonical payload line;
+   presigned requests only permit an unsigned `UNSIGNED-PAYLOAD` marker. Signed
+   header names must be lower-case, unique, sorted and include host. Tests reject
+   injected copy, ACL, tagging and metadata headers. A real AWS Go v4 signer
+   presigned copy succeeds with its original headers and rejects a tampered source.
+   The full AWS SDK suite still passes. This follows the
+   [AWS canonical-header requirements](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_sigv-create-signed-request.html).
+   Ordinary optional HTTP Content-Type/Range/conditional headers keep existing
+   behavior; adding them cannot turn an upload into a source-reading operation.
+2. **Slow-client lock denial of service:** request bodies are admitted and staged
+   with byte limits before the storage consistency lock. Authenticated writes
+   recheck authentication and bucket permissions when dispatched after staging.
+   The deterministic `TestAuditSlowRequestDoesNotHoldStorageLock` blocks login,
+   setup and upload readers with channels and verifies health and object reads
+   complete before releasing the blocked body. Existing concurrent conditional
+   create and storage/GC tests continue to cover the retained consistency boundary.
+   Short configuration snapshots still use the lock; this is not a guarantee that
+   health checks ignore all legitimate storage activity or filesystem stalls.
+3. **Copy source conditions:** CopyObject enforces source ETag and modified /
+   unmodified timestamps before staging or replacing its target, returning 412
+   when a condition fails. A matching source If-Match takes precedence over a
+   failing If-Unmodified-Since; a failing If-None-Match is not overridden by a
+   passing If-Modified-Since. Malformed dates return 400. The source and destination
+   checks execute under the same mutation lock. Tests cover both mixed cases,
+   individual failures/successes and unchanged destination bytes, following
+   [the AWS CopyObject conditions](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html).
+4. **Multipart rollback evidence:** `TestAuditMultipartCommitRollbackAndRetry`
+   injects an SQLite trigger failure at deletion of parts, after the transaction
+   has inserted the replacement object pointer. It verifies the old pointer and
+   bytes, upload record, part record and part bytes all survive; removing the
+   trigger allows a merge/commit retry to publish the intended replacement.
+
+Final follow-up validation uses `/tmp/sss-review-coverage.out` and includes
+uncached `go test ./...`, the AWS SDK tests, `go test -race ./...`, `go vet ./...`
+and the embedded build. No frontend changes were made in this follow-up; the
+previous strict frontend build remains applicable.

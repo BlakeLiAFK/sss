@@ -225,3 +225,87 @@ func TestAuditValidateMigrationLocalS3(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAuditMultipartCommitRollbackAndRetry(t *testing.T) {
+	fs, ms, cleanup := setupIntegrityTest(t)
+	defer cleanup()
+	if err := ms.CreateBucket("audit"); err != nil {
+		t.Fatal(err)
+	}
+	old, etag, err := fs.PutObject("audit", "key", strings.NewReader("old"), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := &Object{Bucket: "audit", Key: "key", Size: 3, ETag: etag, StoragePath: old, LastModified: time.Now()}
+	if err := ms.PutObject(original); err != nil {
+		t.Fatal(err)
+	}
+	id := "aabbccddeeff"
+	if err := ms.CreateMultipartUpload(&MultipartUpload{UploadID: id, Bucket: "audit", Key: "key", Initiated: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	partPath, partETag, size, err := fs.StorePart(id, 1, strings.NewReader("replacement"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	part := Part{UploadID: id, PartNumber: 1, Size: size, ETag: partETag, StoragePath: partPath, ModifiedAt: time.Now()}
+	if err := ms.PutPart(&part); err != nil {
+		t.Fatal(err)
+	}
+	// Fail after the object pointer INSERT, proving transaction rollback rather
+	// than merely rejecting the first statement.
+	if _, err := ms.db.Exec("CREATE TRIGGER fail_complete BEFORE DELETE ON parts BEGIN SELECT RAISE(FAIL,'injected completion failure'); END"); err != nil {
+		t.Fatal(err)
+	}
+	merged, mergedETag, mergedSize, err := fs.MergeStoredParts("audit", "key", id, []Part{part})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := &Object{Bucket: "audit", Key: "key", StoragePath: merged, ETag: mergedETag, Size: mergedSize, LastModified: time.Now()}
+	if err := ms.CompleteMultipart(replacement, id); err == nil {
+		t.Fatal("expected failure")
+	}
+	fs.DeleteObject(merged) // Handler rollback removes only the unpublished blob.
+	current, err := ms.GetObject("audit", "key")
+	if err != nil || current.StoragePath != old {
+		t.Fatal("old pointer lost", err)
+	}
+	if data, _ := os.ReadFile(old); string(data) != "old" {
+		t.Fatal("old bytes lost")
+	}
+	if upload, err := ms.GetMultipartUpload(id); err != nil || upload == nil {
+		t.Fatal("upload lost", err)
+	}
+	if parts, err := ms.ListParts(id); err != nil || len(parts) != 1 {
+		t.Fatal("parts lost", err)
+	}
+	if data, _ := os.ReadFile(partPath); string(data) != "replacement" {
+		t.Fatal("part bytes lost")
+	}
+	if _, err := ms.db.Exec("DROP TRIGGER fail_complete"); err != nil {
+		t.Fatal(err)
+	}
+	merged, mergedETag, mergedSize, err = fs.MergeStoredParts("audit", "key", id, []Part{part})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement.StoragePath = merged
+	replacement.ETag = mergedETag
+	replacement.Size = mergedSize
+	if err := ms.CompleteMultipart(replacement, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := fs.AbortMultipartUpload(id); err != nil {
+		t.Fatal(err)
+	}
+	current, err = ms.GetObject("audit", "key")
+	if err != nil || current.StoragePath != merged {
+		t.Fatal("retry not published", err)
+	}
+	if data, _ := os.ReadFile(merged); string(data) != "replacement" {
+		t.Fatal("retry bytes wrong")
+	}
+	if upload, _ := ms.GetMultipartUpload(id); upload != nil {
+		t.Fatal("committed upload remains")
+	}
+}

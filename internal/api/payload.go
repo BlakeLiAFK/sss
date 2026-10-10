@@ -23,7 +23,7 @@ func (b *stagedBody) Close() error {
 
 // Stage authenticated bodies with bounded memory and verify before any mutation.
 // The temporary file is outside the object store and cannot be collected by GC.
-func verifyPayload(w http.ResponseWriter, r *http.Request) bool {
+func payloadLimit(r *http.Request) int64 {
 	limit := int64(5 << 30)
 	for _, n := range []int64{config.Global.Storage.MaxUploadSize, config.Global.Storage.MaxObjectSize} {
 		if n > 0 && n < limit {
@@ -34,6 +34,12 @@ func verifyPayload(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodPut || strings.HasPrefix(r.URL.Path, "/api/") || r.Header.Get("X-Amz-Copy-Source") != "" {
 		limit = 10 << 20
 	}
+	return limit
+}
+func verifyPayload(w http.ResponseWriter, r *http.Request) bool {
+	return verifyPayloadLimit(w, r, payloadLimit(r))
+}
+func verifyPayloadLimit(w http.ResponseWriter, r *http.Request, limit int64) bool {
 	if value := r.URL.Query().Get("X-Amz-Max-Content-Length"); value != "" {
 		n, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || n <= 0 {

@@ -94,3 +94,38 @@ func parseRange(value string, size int64) (int64, int64, bool) {
 	}
 	return start, end, true
 }
+
+// Copy's source conditions apply before publishing the destination. A matching
+// If-Match takes precedence over If-Unmodified-Since, as in S3's contract.
+func checkCopySourceConditions(w http.ResponseWriter, r *http.Request, obj *storage.Object) bool {
+	fail := func() bool {
+		utils.WriteError(w, utils.S3Error{Code: "PreconditionFailed", Message: "Copy source precondition failed"}, 412, r.URL.Path)
+		return false
+	}
+	match := r.Header.Get("X-Amz-Copy-Source-If-Match")
+	if match != "" && !matchesETag(match, obj.ETag, true) {
+		return fail()
+	}
+	if h := r.Header.Get("X-Amz-Copy-Source-If-None-Match"); h != "" && matchesETag(h, obj.ETag, true) {
+		return fail()
+	}
+	for _, name := range []string{"X-Amz-Copy-Source-If-Modified-Since", "X-Amz-Copy-Source-If-Unmodified-Since"} {
+		value := r.Header.Get(name)
+		if value == "" {
+			continue
+		}
+		stamp, err := http.ParseTime(value)
+		if err != nil {
+			utils.WriteError(w, utils.ErrInvalidArgument, 400, r.URL.Path)
+			return false
+		}
+		after := obj.LastModified.Truncate(1e9).After(stamp)
+		if name == "X-Amz-Copy-Source-If-Modified-Since" && !after {
+			return fail()
+		}
+		if name == "X-Amz-Copy-Source-If-Unmodified-Since" && match == "" && after {
+			return fail()
+		}
+	}
+	return true
+}

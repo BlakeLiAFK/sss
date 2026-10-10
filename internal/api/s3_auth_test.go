@@ -106,10 +106,15 @@ func signRequest(req *http.Request, accessKey, secretKey, region string, payload
 	req.Header.Set("X-Amz-Content-Sha256", payloadHash)
 
 	// 确定签名头部
-	signedHeaders := "host;x-amz-content-sha256;x-amz-date"
-	if req.Header.Get("Content-Type") != "" {
-		signedHeaders = "content-type;" + signedHeaders
+	names := []string{"host"}
+	for name := range req.Header {
+		name = strings.ToLower(name)
+		if strings.HasPrefix(name, "x-amz-") || name == "content-type" {
+			names = append(names, name)
+		}
 	}
+	sort.Strings(names)
+	signedHeaders := strings.Join(names, ";")
 
 	// 创建规范请求
 	canonicalRequest := createCanonicalRequestForTest(req, signedHeaders, payloadHash)
