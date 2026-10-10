@@ -128,7 +128,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 	}
 	if !control {
-		if r.Method == "GET" || r.Method == "HEAD" {
+		bucket, objectKey, objectMutation := objectMutationTarget(r)
+		if objectMutation {
+			// Parallel immutable staging/publication for distinct keys. GC,
+			// bucket mutation and settings retain the exclusive maintenance gate.
+			s.filestore.MutationMu.RLock()
+			defer s.filestore.MutationMu.RUnlock()
+			unlock := s.filestore.LockObject(bucket, objectKey)
+			defer unlock()
+		} else if (r.Method == "GET" || r.Method == "HEAD") && path != "/api/admin/storage/gc" {
 			s.filestore.MutationMu.RLock()
 			defer s.filestore.MutationMu.RUnlock()
 		} else {
@@ -136,6 +144,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			defer s.filestore.MutationMu.Unlock()
 		}
 	}
+
 	s.mux.ServeHTTP(w, r)
 }
 
@@ -812,4 +821,27 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":  "ok",
 		"version": config.Version,
 	})
+}
+
+// S3 object writes share a key lock. Administrative compound/bucket operations
+// keep the exclusive maintenance gate, so they cannot race individual writes.
+func objectMutationTarget(r *http.Request) (string, string, bool) {
+	if r.Method != "PUT" && r.Method != "POST" && r.Method != "DELETE" {
+		return "", "", false
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/admin/buckets/") {
+		parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/api/admin/buckets/"), "/", 2)
+		key := r.URL.Query().Get("key")
+		if len(parts) == 2 && key != "" && ((parts[1] == "upload" && r.Method == "POST") || (parts[1] == "objects" && r.Method == "DELETE")) {
+			return parts[0], key, true
+		}
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		return "", "", false
+	}
+	parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
 }

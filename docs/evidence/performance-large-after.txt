@@ -1,0 +1,9 @@
+goos: darwin
+goarch: arm64
+pkg: sss/internal/api
+cpu: Apple M4 Pro
+BenchmarkAuditConcurrentObjects/bytes_67108864-4         	       8	  97749406 ns/op	 686.54 MB/s	58818816 B/op	     457 allocs/op
+BenchmarkAuditConcurrentObjects/bytes_67108864-4         	       8	  91713557 ns/op	 731.72 MB/s	58818560 B/op	     456 allocs/op
+BenchmarkAuditConcurrentObjects/bytes_67108864-4         	       8	 104154458 ns/op	 644.32 MB/s	58818371 B/op	     455 allocs/op
+PASS
+ok  	sss/internal/api	4.340s

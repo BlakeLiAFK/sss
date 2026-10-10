@@ -85,6 +85,7 @@ func (m *MetadataStore) initTables() error {
 			FOREIGN KEY (upload_id) REFERENCES multipart_uploads(upload_id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_objects_bucket ON objects(bucket)`,
+		`CREATE INDEX IF NOT EXISTS idx_objects_storage_path ON objects(storage_path)`,
 		`CREATE INDEX IF NOT EXISTS idx_objects_prefix ON objects(bucket, key)`,
 		// 优化 last_modified 排序查询（Dashboard 最近文件）
 		`CREATE INDEX IF NOT EXISTS idx_objects_last_modified ON objects(last_modified DESC)`,

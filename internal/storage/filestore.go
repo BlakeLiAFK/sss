@@ -21,8 +21,10 @@ var (
 
 // FileStore 文件系统存储
 type FileStore struct {
-	basePath   string
-	MutationMu sync.RWMutex
+	basePath    string
+	MutationMu  sync.RWMutex
+	locksMu     sync.Mutex
+	objectLocks map[string]*objectLock
 }
 
 // NewFileStore 创建文件存储
@@ -388,15 +390,6 @@ func (f *FileStore) GetStoragePath(bucket, key string) string {
 		return ""
 	}
 	return path
-}
-
-func syncDirectory(path string) error {
-	dir, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
 }
 
 func withinBase(base, path string) bool {

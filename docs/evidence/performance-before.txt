@@ -1,0 +1,24 @@
+goos: darwin
+goarch: arm64
+pkg: sss/internal/api
+cpu: Apple M4 Pro
+BenchmarkAuditConcurrentObjects/bytes_65536-8         	      24	   5055991 ns/op	  12.96 MB/s	  154798 B/op	     443 allocs/op
+BenchmarkAuditConcurrentObjects/bytes_65536-8         	      24	   5326524 ns/op	  12.30 MB/s	  154472 B/op	     442 allocs/op
+BenchmarkAuditConcurrentObjects/bytes_65536-8         	      24	   5306722 ns/op	  12.35 MB/s	  154514 B/op	     442 allocs/op
+BenchmarkAuditConcurrentObjects/bytes_4194304-8       	      24	  20081814 ns/op	 208.86 MB/s	 3767907 B/op	     443 allocs/op
+BenchmarkAuditConcurrentObjects/bytes_4194304-8       	      24	  11848533 ns/op	 353.99 MB/s	 3767728 B/op	     444 allocs/op
+BenchmarkAuditConcurrentObjects/bytes_4194304-8       	      24	  12442918 ns/op	 337.08 MB/s	 3767350 B/op	     442 allocs/op
+PASS
+ok  	sss/internal/api	2.108s
+goos: darwin
+goarch: arm64
+pkg: sss/internal/storage
+cpu: Apple M4 Pro
+BenchmarkAuditGCManyObjects/objects_2000-8         	      24	  11082681 ns/op	 3802032 B/op	   51691 allocs/op
+BenchmarkAuditGCManyObjects/objects_2000-8         	      24	  10772356 ns/op	 3799839 B/op	   51691 allocs/op
+BenchmarkAuditGCManyObjects/objects_2000-8         	      24	  10771417 ns/op	 3802088 B/op	   51691 allocs/op
+BenchmarkAuditGCManyObjects/objects_20000-8        	      24	  82622549 ns/op	37168847 B/op	  483819 allocs/op
+BenchmarkAuditGCManyObjects/objects_20000-8        	      24	  87715896 ns/op	37169335 B/op	  483818 allocs/op
+BenchmarkAuditGCManyObjects/objects_20000-8        	      24	  83671526 ns/op	37169357 B/op	  483819 allocs/op
+PASS
+ok  	sss/internal/storage	25.792s

@@ -1,0 +1,9 @@
+	sss/cmd/server		coverage: 0.0% of statements
+	sss/cmd/upload		coverage: 0.0% of statements
+ok  	sss/internal/admin	44.908s	coverage: 64.9% of statements
+ok  	sss/internal/api	10.364s	coverage: 73.2% of statements
+ok  	sss/internal/auth	3.658s	coverage: 71.9% of statements
+ok  	sss/internal/config	2.311s	coverage: 80.7% of statements
+ok  	sss/internal/storage	23.364s	coverage: 69.2% of statements
+ok  	sss/internal/utils	4.094s	coverage: 59.8% of statements
+	sss/tools		coverage: 0.0% of statements

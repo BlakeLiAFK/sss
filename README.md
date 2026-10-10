@@ -186,9 +186,12 @@ Each API key can have different permissions for different buckets:
 
 ### Prerequisites
 
-- Go 1.21+
-- Node.js 20+
+- Go 1.24+
+- Node.js 22.12+ (Node 24 recommended; Vite also accepts 20.19+)
 - npm
+
+See [hardening and validation evidence](docs/HARDENING-FOLLOWUP.md) and
+[local password recovery](docs/PASSWORD-RECOVERY.md).
 
 ### Build Commands
 

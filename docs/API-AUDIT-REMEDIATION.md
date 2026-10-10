@@ -1,5 +1,10 @@
 # API audit remediation
 
+Latest follow-up: [remaining-item hardening, performance and platform evidence](HARDENING-FOLLOWUP.md).
+This supersedes the earlier dependency, recovery-path, browser and GC-memory
+limitations recorded below. Native Windows and physical power-loss validation
+remain explicitly unexecuted.
+
 Source: `SSS_API全量清单与静态审计.docx`, Library
 `libfile_e0e4803abbcc8191a83c7011921d1858`, 78 operations, audited commit
 `55a312a381a153bcedd8322de6e2c1c4eb18e804`. Remote HEAD was verified before work.
@@ -42,15 +47,18 @@ Existing object paths remain readable. The new `parts.storage_path` column has a
 empty default; in-progress uploads from older versions use their legacy part
 paths. New writes are immutable paths; deleted/replaced object blobs are reclaimed
 by GC. Object publication is a SQLite pointer commit after file fsync. SQLite uses
-FULL synchronous mode. Blob directories are synced before publication.
+FULL synchronous mode. Unix blob directories are synced before publication.
+Windows uses file-handle Sync without a Unix-style directory fsync guarantee;
+its test binary compiles but native NTFS execution remains unverified.
 
-A FileStore read/write lock serializes admitted storage mutations and coordinates
-migration writes against reads and maintenance. Authentication and bounded HTTP
+A FileStore maintenance gate with per-object write locks coordinates concurrent
+storage mutations and migration writes against reads and maintenance. Authentication and bounded HTTP
 body staging happen before that lock; login/setup/session and migration-control
 handlers do not hold it while waiting on clients. Setup acquires it only for the
 short runtime configuration reload. Temporary request bodies live outside the
-object store, so concurrent GC cannot collect them. This intentionally favors correctness over
-parallel upload throughput. Cancellation endpoints do not take that lock so an
+object store, so concurrent GC cannot collect them. Different object keys can
+publish concurrently while each key preserves its condition/publication boundary.
+Cancellation endpoints do not take that lock so an
 in-flight remote transfer can be cancelled. Deploy one server process per store;
 shared-directory multi-process operation is not supported.
 
@@ -121,7 +129,7 @@ all deployment configurations. Evidence: `api/audit_regression_test.go`,
 | H01 | Health | GET/HEAD, actual build version and metadata readiness failure. |
 | U01 | Setup status | Database errors return 500 rather than uninstalled. |
 | U02 | Install | Single transaction and setup lock; managed initial key; runtime fields remain CLI-controlled. |
-| U03 | Reset check | Verified intentional recovery UI contract; unauthenticated marker path/existence retained. See limits. |
+| U03 | Reset check | Follow-up removes path/command disclosure; availability-only response and durable local nonce authorization. |
 | U04 | Reset password | Regular-file check, all stat errors rejected, serialized one-time marker consumption. |
 | A01 | Login | Retained bcrypt/session/rate-limit flow; compatibility credentials read enabled managed key only. |
 | A02 | Logout | Retained current-session invalidation. |
@@ -178,7 +186,7 @@ all deployment configurations. Evidence: `api/audit_regression_test.go`,
 
 ## Validation (2026-10-10, macOS arm64)
 
-- `go test ./... -count=1 -coverprofile=/tmp/sss-coverage.out`: passed. Total
+- Original audit run: `go test ./... -count=1 -coverprofile=/tmp/sss-coverage.out` passed. Total
   statement coverage 65.8% (includes command/tool packages at 0%). Package coverage:
   admin 64.2%, api 73.1%, auth 71.9%, config 80.7%, storage 68.9%, utils 59.8%.
   Coverage is statement execution, not proof of all failure modes.
@@ -197,26 +205,25 @@ all deployment configurations. Evidence: `api/audit_regression_test.go`,
 No confirmed audit defect is intentionally left unfixed. These are explicit
 limits of the performed verification, not a claim of complete AWS S3 support:
 
-- No power-cut/crash-injection campaign, huge-store load test, browser interaction
-  E2E, cross-platform filesystem runtime or multi-process store validation. FULL
+- No physical power-cut campaign or multi-process store validation. The follow-up
+  adds process-kill/fault injection, 80k-file memory probes, real browser E2E and
+  Linux runtime coverage; Windows remains unexecuted. FULL
   SQLite synchronization and file/directory fsync improve durability but do not
   prove behavior under every filesystem/device failure. The mutation lock reduces
-  concurrent write throughput. GC still scans the store and may consume substantial
-  memory on large datasets.
-- U03 retains the unauthenticated reset-marker absolute path/existence response
-  needed by the recovery UI. A locally created marker authorizes recovery; treat
-  this as an operator-controlled recovery window. If password persistence fails
-  after consuming the marker, recreate the marker to retry. No new production
-  reverse-proxy policy was applied.
+  concurrent write throughput. GC now uses indexed batches and capped detail samples; full scans still take
+  time and hold the maintenance gate.
+- U03 now returns availability only; durable nonce consumption makes failed
+  password transactions retryable and successful recovery non-replayable. See
+  [recovery instructions](PASSWORD-RECOVERY.md).
 - A47 uses the fixed HTTPS GitHub API, a finite timeout and no cache; upstream
   availability/rate limits are surfaced as errors. Tests mock upstream responses,
   not live GitHub availability. It checks metadata only, never installs an update.
 - GeoStats configured enabled state is preserved when GeoIP is removed; actual
   recording stops because requests require both services available. Uploading a
   valid database restores availability without discarding configured preferences.
-- `npm ci` reports 16 existing dependency vulnerabilities (4 moderate, 12 high),
-  and Vite reports a large output chunk. Dependency upgrades/bundle redesign were
-  not included in this API remediation; neither prevented the strict build.
+- Full and production npm audits now report zero vulnerabilities after supported
+  upgrades and strict build/browser verification. Vite still emits a visible
+  large-chunk warning; see the [dependency report](DEPENDENCY-REMEDIATION.md).
 - No release, deployment, tag or workflow change. The existing release workflow
   runs only on `v*` tags or manual dispatch, not a master branch push.
 

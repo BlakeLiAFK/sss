@@ -11,14 +11,15 @@ import (
 
 // GCResult 垃圾回收结果
 type GCResult struct {
-	OrphanFiles     []OrphanFile `json:"orphan_files"`      // 孤立文件列表
-	OrphanCount     int          `json:"orphan_count"`      // 孤立文件数量
-	OrphanSize      int64        `json:"orphan_size"`       // 孤立文件总大小
-	ExpiredUploads  []string     `json:"expired_uploads"`   // 过期的分片上传ID
-	ExpiredCount    int          `json:"expired_count"`     // 过期上传数量
-	ExpiredPartSize int64        `json:"expired_part_size"` // 过期分片总大小
-	Cleaned         bool         `json:"cleaned"`           // 是否已清理
-	CleanedAt       *time.Time   `json:"cleaned_at"`        // 清理时间
+	OrphanFiles      []OrphanFile `json:"orphan_files"`      // 孤立文件列表
+	OrphanCount      int          `json:"orphan_count"`      // 孤立文件数量
+	OrphanSize       int64        `json:"orphan_size"`       // 孤立文件总大小
+	ExpiredUploads   []string     `json:"expired_uploads"`   // 过期的分片上传ID
+	ExpiredCount     int          `json:"expired_count"`     // 过期上传数量
+	ExpiredPartSize  int64        `json:"expired_part_size"` // 过期分片总大小
+	DetailsTruncated bool         `json:"details_truncated"` // Detail arrays are samples; counts remain complete.
+	Cleaned          bool         `json:"cleaned"`           // 是否已清理
+	CleanedAt        *time.Time   `json:"cleaned_at"`        // 清理时间
 }
 
 // OrphanFile 孤立文件信息
@@ -46,53 +47,11 @@ func (f *FileStore) ScanOrphanFiles(metadata *MetadataStore) (*GCResult, error) 
 		ExpiredUploads: make([]string, 0),
 	}
 
-	// 获取所有元数据中的存储路径
-	knownPaths := make(map[string]bool)
-	buckets, err := metadata.ListBuckets()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, bucket := range buckets {
-		// 获取桶中所有对象
-		objects, err := metadata.ListAllObjects(bucket.Name)
-		if err != nil {
-			return nil, err
-		}
-		for _, obj := range objects {
-			knownPaths[obj.StoragePath] = true
-		}
-	}
-
-	// 遍历磁盘文件
-	err = filepath.Walk(f.basePath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// 跳过目录
-		if info.IsDir() {
-			// 跳过 .multipart 目录（由 ScanExpiredUploads 处理）
-			if info.Name() == ".multipart" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// 检查文件是否在元数据中
-		if !knownPaths[path] {
-			relPath, _ := filepath.Rel(f.basePath, path)
-			result.OrphanFiles = append(result.OrphanFiles, OrphanFile{
-				Path:       relPath,
-				Size:       info.Size(),
-				ModifiedAt: info.ModTime(),
-			})
-			result.OrphanSize += info.Size()
-		}
-
+	err := f.scanObjectOrphans(metadata, func(file OrphanFile) error {
+		result.OrphanFiles = append(result.OrphanFiles, file)
+		result.OrphanSize += file.Size
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -181,23 +140,19 @@ func (m *MetadataStore) CleanExpiredUploads(uploadIDs []string, filestore *FileS
 	for _, uploadID := range uploadIDs {
 		// 计算分片大小
 		var partSize int64
-		m.db.QueryRow("SELECT COALESCE(SUM(size), 0) FROM parts WHERE upload_id = ?", uploadID).Scan(&partSize)
+		if err := m.db.QueryRow("SELECT COALESCE(SUM(size), 0) FROM parts WHERE upload_id = ?", uploadID).Scan(&partSize); err != nil {
+			return totalCleaned, err
+		}
+		if err := m.AbortMultipart(uploadID); err != nil {
+			return totalCleaned, err
+		}
+		if filestore != nil {
+			if err := filestore.AbortMultipartUpload(uploadID); err != nil {
+				return totalCleaned, err
+			}
+		}
 		totalCleaned += partSize
 
-		// 删除分片记录
-		if _, err := m.db.Exec("DELETE FROM parts WHERE upload_id = ?", uploadID); err != nil {
-			return totalCleaned, err
-		}
-
-		// 删除上传记录
-		if _, err := m.db.Exec("DELETE FROM multipart_uploads WHERE upload_id = ?", uploadID); err != nil {
-			return totalCleaned, err
-		}
-
-		// 删除磁盘上的分片文件
-		if filestore != nil {
-			filestore.AbortMultipartUpload(uploadID)
-		}
 	}
 
 	return totalCleaned, nil
@@ -231,130 +186,95 @@ func (m *MetadataStore) ListAllObjects(bucket string) ([]Object, error) {
 
 // ScanMultipartOrphans 扫描 .multipart 目录中的孤立分片
 func (f *FileStore) ScanMultipartOrphans(metadata *MetadataStore) ([]OrphanFile, int64, error) {
-	multipartDir := filepath.Join(f.basePath, ".multipart")
-
-	// 检查目录是否存在
-	if _, err := os.Stat(multipartDir); os.IsNotExist(err) {
-		return nil, 0, nil
-	}
-
-	// 获取所有活跃的上传ID
-	activeUploads := make(map[string]bool)
-	rows, err := metadata.db.Query("SELECT upload_id FROM multipart_uploads")
-	if err != nil {
-		return nil, 0, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var uploadID string
-		if err := rows.Scan(&uploadID); err != nil {
-			return nil, 0, err
-		}
-		activeUploads[uploadID] = true
-	}
-
 	var orphans []OrphanFile
-	var totalSize int64
-
-	// 遍历 .multipart 目录
-	entries, err := os.ReadDir(multipartDir)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		uploadID := entry.Name()
-		if activeUploads[uploadID] {
-			continue // 活跃上传，跳过
-		}
-
-		// 计算孤立上传目录的大小
-		uploadDir := filepath.Join(multipartDir, uploadID)
-		err := filepath.Walk(uploadDir, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() {
-				return nil
-			}
-			relPath, _ := filepath.Rel(f.basePath, path)
-			orphans = append(orphans, OrphanFile{
-				Path:       relPath,
-				Size:       info.Size(),
-				ModifiedAt: info.ModTime(),
-			})
-			totalSize += info.Size()
-			return nil
-		})
-		if err != nil {
-			continue
-		}
-	}
-
-	return orphans, totalSize, nil
+	var size int64
+	err := f.scanMultipartOrphans(metadata, func(file OrphanFile) error { orphans = append(orphans, file); size += file.Size; return nil })
+	return orphans, size, err
 }
 
 // RunGC 执行完整的垃圾回收
+// The caller holds the exclusive maintenance gate for both preview and delete.
+// Counts cover the whole store; response details are capped samples. Deletion
+// streams from the scanner, never from the sample arrays.
 func RunGC(filestore *FileStore, metadata *MetadataStore, maxUploadAge time.Duration, dryRun bool) (*GCResult, error) {
-	result := &GCResult{
-		OrphanFiles:    make([]OrphanFile, 0),
-		ExpiredUploads: make([]string, 0),
+	result := &GCResult{OrphanFiles: make([]OrphanFile, 0), ExpiredUploads: make([]string, 0)}
+	visit := func(file OrphanFile) error {
+		result.OrphanCount++
+		result.OrphanSize += file.Size
+		if len(result.OrphanFiles) < GCDetailLimit {
+			result.OrphanFiles = append(result.OrphanFiles, file)
+		} else {
+			result.DetailsTruncated = true
+		}
+		if !dryRun {
+			path := filepath.Join(filestore.basePath, file.Path)
+			if !withinBase(filestore.basePath, path) {
+				return ErrInvalidPath
+			}
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+		return nil
 	}
-
-	// 1. 扫描孤立文件
-	orphanResult, err := filestore.ScanOrphanFiles(metadata)
-	if err != nil {
-		return nil, err
+	if err := filestore.scanObjectOrphans(metadata, visit); err != nil {
+		return result, err
 	}
-	result.OrphanFiles = orphanResult.OrphanFiles
-	result.OrphanCount = orphanResult.OrphanCount
-	result.OrphanSize = orphanResult.OrphanSize
-
-	// 2. 扫描 .multipart 中的孤立分片
-	multipartOrphans, multipartSize, err := filestore.ScanMultipartOrphans(metadata)
-	if err != nil {
-		return nil, err
+	if err := filestore.scanMultipartOrphans(metadata, visit); err != nil {
+		return result, err
 	}
-	if len(multipartOrphans) > 0 {
-		result.OrphanFiles = append(result.OrphanFiles, multipartOrphans...)
-		result.OrphanCount += len(multipartOrphans)
-		result.OrphanSize += multipartSize
+	cutoff := time.Now().Add(-maxUploadAge)
+	marker := ""
+	for {
+		rows, err := metadata.db.Query("SELECT upload_id FROM multipart_uploads WHERE initiated < ? AND upload_id > ? ORDER BY upload_id LIMIT ?", cutoff, marker, gcBatchSize)
+		if err != nil {
+			return result, err
+		}
+		ids := make([]string, 0, gcBatchSize)
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return result, err
+			}
+			ids = append(ids, id)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return result, err
+		}
+		if len(ids) == 0 {
+			break
+		}
+		for _, id := range ids {
+			var size int64
+			if err := metadata.db.QueryRow("SELECT COALESCE(SUM(size),0) FROM parts WHERE upload_id=?", id).Scan(&size); err != nil {
+				return result, err
+			}
+			result.ExpiredCount++
+			result.ExpiredPartSize += size
+			if len(result.ExpiredUploads) < GCDetailLimit {
+				result.ExpiredUploads = append(result.ExpiredUploads, id)
+			} else {
+				result.DetailsTruncated = true
+			}
+			if !dryRun {
+				if _, err := metadata.CleanExpiredUploads([]string{id}, filestore); err != nil {
+					return result, err
+				}
+			}
+		}
+		marker = ids[len(ids)-1]
 	}
-
-	// 3. 扫描过期上传
-	expiredUploads, err := metadata.GetExpiredUploads(maxUploadAge)
-	if err != nil {
-		return nil, err
-	}
-	for _, u := range expiredUploads {
-		result.ExpiredUploads = append(result.ExpiredUploads, u.UploadID)
-		result.ExpiredPartSize += u.TotalSize
-	}
-	result.ExpiredCount = len(expiredUploads)
-
-	// 如果不是干运行模式，执行清理
 	if !dryRun {
-		// 清理孤立文件
-		if len(result.OrphanFiles) > 0 {
-			if err := filestore.CleanOrphanFiles(result.OrphanFiles); err != nil {
-				return result, err
-			}
+		if _, err := pruneEmptyGCDirectories(filestore.basePath, false); err != nil {
+			return result, err
 		}
-
-		// 清理过期上传
-		if len(result.ExpiredUploads) > 0 {
-			if _, err := metadata.CleanExpiredUploads(result.ExpiredUploads, filestore); err != nil {
-				return result, err
-			}
-		}
-
 		result.Cleaned = true
 		now := time.Now()
 		result.CleanedAt = &now
 	}
-
 	return result, nil
 }
 

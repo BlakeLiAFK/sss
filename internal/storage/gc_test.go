@@ -293,7 +293,7 @@ func TestCleanExpiredUploads(t *testing.T) {
 	ms.CreateBucket(bucket)
 
 	// 创建上传和分片
-	uploadID := "test-upload-id"
+	uploadID := "aabbccddeeff0011"
 	ms.CreateMultipartUpload(&MultipartUpload{
 		UploadID:    uploadID,
 		Bucket:      bucket,
@@ -509,7 +509,7 @@ func TestRunGCCleanup(t *testing.T) {
 	os.WriteFile(orphanPath, []byte("orphan"), 0644)
 
 	// 创建过期上传
-	oldUploadID := "old-upload"
+	oldUploadID := "aabbccddeeff0022"
 	ms.CreateMultipartUpload(&MultipartUpload{
 		UploadID:    oldUploadID,
 		Bucket:      bucket,

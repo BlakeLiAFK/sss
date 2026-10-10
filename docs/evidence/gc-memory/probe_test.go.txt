@@ -1,0 +1,59 @@
+package storage
+
+import (
+ "encoding/json"
+ "fmt"
+ "os"
+ "path/filepath"
+ "runtime"
+ "testing"
+ "time"
+)
+
+// This diagnostic separates normal heap occupancy from post-collection live heap.
+// Forced collection is a separate experiment, never a throughput benchmark.
+func TestGCMemoryEvidence(t *testing.T) {
+ for _, count := range []int{20000,80000} {
+  t.Run(fmt.Sprint(count),func(t *testing.T){
+   root:=t.TempDir()
+   fs,err:=NewFileStore(filepath.Join(root,"blobs"));if err!=nil {t.Fatal(err)}
+   ms,err:=NewMetadataStore(filepath.Join(root,"metadata.db"));if err!=nil {t.Fatal(err)}
+   defer ms.Close()
+   if err=ms.CreateBucket("benchmark");err!=nil {t.Fatal(err)}
+   tx,err:=ms.db.Begin();if err!=nil {t.Fatal(err)}
+   stmt,err:=tx.Prepare("INSERT INTO objects(bucket,key,size,etag,content_type,last_modified,storage_path) VALUES('benchmark',?,1,'etag','text/plain',?,?)");if err!=nil {t.Fatal(err)}
+   now:=time.Now()
+   for i:=0;i<count;i++ {
+    key:=fmt.Sprintf("key-%08d",i);path:=fs.GetStoragePath("benchmark",key)
+    if err=os.MkdirAll(filepath.Dir(path),0755);err!=nil {t.Fatal(err)}
+    if err=os.WriteFile(path,[]byte("x"),0600);err!=nil {t.Fatal(err)}
+    if i%20!=0 {if _,err=stmt.Exec(key,now,path);err!=nil {t.Fatal(err)}}
+   }
+   stmt.Close();if err=tx.Commit();err!=nil {t.Fatal(err)}
+   for _,mode:=range []string{"natural-occupancy","forced-gc-live"} {
+    for repeat:=0;repeat<3;repeat++ {
+     runtime.GC();var start runtime.MemStats;runtime.ReadMemStats(&start)
+     stop:=make(chan struct{});done:=make(chan struct{})
+     peak:=start.HeapAlloc;samples:=0
+     go func(){
+      defer close(done)
+      interval:=2*time.Millisecond;if mode=="forced-gc-live" {interval=20*time.Millisecond}
+      ticker:=time.NewTicker(interval);defer ticker.Stop()
+      for {select {case <-stop:return;case <-ticker.C:
+       if mode=="forced-gc-live" {runtime.GC()}
+       var m runtime.MemStats;runtime.ReadMemStats(&m);samples++;if m.HeapAlloc>peak {peak=m.HeapAlloc}
+      }}
+     }()
+     begin:=time.Now();result,err:=RunGC(fs,ms,time.Hour,true);elapsed:=time.Since(begin)
+     close(stop);<-done
+     if err!=nil||result.OrphanCount!=count/20 {t.Fatal(result,err)}
+     var end runtime.MemStats;runtime.ReadMemStats(&end)
+     if mode=="natural-occupancy"&&end.HeapAlloc>peak {peak=end.HeapAlloc}
+     runtime.GC();var retained runtime.MemStats;runtime.ReadMemStats(&retained);runtime.KeepAlive(result)
+     record:=map[string]interface{}{"objects":count,"mode":mode,"repeat":repeat+1,"baseline_heap_bytes":start.HeapAlloc,"sampled_peak_heap_bytes":peak,"peak_increment_bytes":peak-start.HeapAlloc,"total_alloc_bytes":end.TotalAlloc-start.TotalAlloc,"retained_result_heap_bytes":retained.HeapAlloc,"samples":samples,"elapsed_ms":float64(elapsed)/float64(time.Millisecond),"orphans":result.OrphanCount,"detail_count":len(result.OrphanFiles)}
+     data,_:=json.Marshal(record);t.Log("GC_MEMORY "+string(data))
+    }
+   }
+  })
+ }
+}

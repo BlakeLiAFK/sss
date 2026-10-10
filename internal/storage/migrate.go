@@ -430,8 +430,10 @@ func (m *MigrateManager) transferObject(ctx context.Context, client *s3.Client, 
 		contentType = *getResp.ContentType
 	}
 
-	m.fileStore.MutationMu.Lock()
-	defer m.fileStore.MutationMu.Unlock()
+	m.fileStore.MutationMu.RLock()
+	defer m.fileStore.MutationMu.RUnlock()
+	unlock := m.fileStore.LockObject(cfg.TargetBucket, targetKey)
+	defer unlock()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
