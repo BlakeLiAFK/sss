@@ -44,28 +44,23 @@
       </el-form>
 
       <div class="login-footer">
-        <el-button link type="primary" @click="showResetDialog = true">
+        <el-button link type="primary" @click="openResetDialog">
           {{ t('login.forgotPassword') }}
         </el-button>
       </div>
     </div>
 
     <!-- 密码重置对话框 -->
-    <el-dialog v-model="showResetDialog" :title="t('login.resetPasswordTitle')" width="450px">
+    <el-dialog v-model="showResetDialog" :title="t('login.resetPasswordTitle')" width="min(450px, 95vw)" :close-on-click-modal="!resetting" :close-on-press-escape="!resetting" :show-close="!resetting">
       <div v-if="!resetFileExists">
         <el-alert type="info" :closable="false" show-icon>
           <template #title>
             <span>{{ t('login.resetCommand') }}</span>
           </template>
-          <template #default>
-            <code class="reset-command">{{ resetCommand }}</code>
-            <el-button size="small" @click="copyResetCommand" style="margin-left: 8px;">
-              {{ t('common.copy') }}
-            </el-button>
-          </template>
+          <template #default>{{ t('login.resetCommandHint') }}</template>
         </el-alert>
-        <p class="reset-tip">{{ t('login.resetCommandHint') }}</p>
-        <el-button type="primary" @click="checkResetFile" :loading="checkingFile">
+
+        <el-button type="primary" @click="checkResetFile(true)" :loading="checkingFile">
           {{ t('login.checkFile') }}
         </el-button>
       </div>
@@ -76,7 +71,7 @@
             <el-input
               v-model="resetForm.newPassword"
               type="password"
-              :placeholder="t('login.atLeast6Chars')"
+              :placeholder="t('login.passwordRequirements')"
               show-password
             />
           </el-form-item>
@@ -132,7 +127,6 @@ const rules = {
 // 密码重置相关
 const showResetDialog = ref(false)
 const resetFileExists = ref(false)
-const resetCommand = ref('')
 const checkingFile = ref(false)
 const resetting = ref(false)
 
@@ -152,7 +146,7 @@ const validateConfirmPassword = (_rule: any, value: string, callback: Function) 
 const resetRules = {
   newPassword: [
     { required: true, message: t('login.pleaseEnterPassword'), trigger: 'blur' },
-    { min: 6, message: t('login.atLeast6Chars'), trigger: 'blur' }
+    { pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9]).{8,}$/s, message: t('login.passwordRequirements'), trigger: 'blur' }
   ],
   confirmPassword: [
     { required: true, message: t('login.pleaseConfirmPassword'), trigger: 'blur' },
@@ -194,42 +188,29 @@ async function handleLogin() {
 }
 
 // 检测重置文件
-async function checkResetFile() {
+async function openResetDialog() {
+  resetFileExists.value = false
+  resetForm.newPassword = ''
+  resetForm.confirmPassword = ''
+  showResetDialog.value = true
+  await checkResetFile(false)
+}
+
+async function checkResetFile(notify = true) {
   checkingFile.value = true
   try {
     const response = await axios.get(`${endpoint}/api/setup/reset-password/check`)
-    if (response.data.file_exists) {
-      resetFileExists.value = true
-      ElMessage.success(t('login.fileDetected'))
+    resetFileExists.value = response.data.file_exists === true
+    if (resetFileExists.value) {
+      if (notify) ElMessage.success(t('login.fileDetected'))
     } else {
-      resetCommand.value = response.data.command
-      ElMessage.warning(t('login.fileNotDetected'))
+      if (notify) ElMessage.warning(t('login.fileNotDetected'))
     }
   } catch (e: any) {
-    ElMessage.error(t('login.checkFailed') + ': ' + (e.response?.data?.Message || e.message))
+    resetFileExists.value = false
+    ElMessage.error(t('login.checkFailed') + ': ' + (e.response?.data?.Message || e.response?.data?.message || e.message))
   } finally {
     checkingFile.value = false
-  }
-}
-
-// 复制重置命令（兼容 HTTP 环境）
-function copyResetCommand() {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(resetCommand.value)
-    } else {
-      const textarea = document.createElement('textarea')
-      textarea.value = resetCommand.value
-      textarea.style.position = 'fixed'
-      textarea.style.left = '-9999px'
-      document.body.appendChild(textarea)
-      textarea.select()
-      document.execCommand('copy')
-      document.body.removeChild(textarea)
-    }
-    ElMessage.success(t('common.copied'))
-  } catch {
-    ElMessage.error(t('common.copyFailed'))
   }
 }
 
@@ -256,7 +237,8 @@ async function handleResetPassword() {
         ElMessage.error(response.data.message || t('login.resetFailed'))
       }
     } catch (e: any) {
-      ElMessage.error(t('login.resetFailed') + ': ' + (e.response?.data?.Message || e.message))
+      if (e.response?.status === 403) resetFileExists.value = false
+      ElMessage.error(t('login.resetFailed') + ': ' + (e.response?.data?.Message || e.response?.data?.message || e.message))
     } finally {
       resetting.value = false
     }

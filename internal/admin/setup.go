@@ -1,9 +1,12 @@
 package admin
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -45,9 +48,7 @@ type SystemStatusResponse struct {
 
 // ResetPasswordCheckResponse 密码重置检测响应
 type ResetPasswordCheckResponse struct {
-	FileExists bool   `json:"file_exists"`
-	FilePath   string `json:"file_path"`
-	Command    string `json:"command"`
+	FileExists bool `json:"file_exists"`
 }
 
 // ResetPasswordRequest 密码重置请求
@@ -182,36 +183,30 @@ func (h *Handler) handleResetPasswordCheck(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// 获取绝对路径
-	absPath, _ := filepath.Abs(resetPasswordFile)
-
-	// 检测文件是否存在
-	_, err := os.Stat(resetPasswordFile)
-	fileExists := err == nil
-
-	utils.WriteJSONResponse(w, ResetPasswordCheckResponse{
-		FileExists: fileExists,
-		FilePath:   absPath,
-		Command:    "touch " + absPath,
-	})
+	setupMu.Lock()
+	defer setupMu.Unlock()
+	w.Header().Set("Cache-Control", "no-store")
+	token, _, err := readRecoveryMarker(false)
+	available := err == nil
+	if available && token != "" {
+		used, lookupErr := h.metadata.RecoveryConsumed(token)
+		if lookupErr != nil {
+			writeAdminError(w, utils.ErrInternalError, 500, "")
+			return
+		}
+		available = !used
+	}
+	utils.WriteJSONResponse(w, ResetPasswordCheckResponse{FileExists: available})
 }
 
 // handleResetPassword 重置密码
 func (h *Handler) handleResetPassword(w http.ResponseWriter, r *http.Request) {
-	setupMu.Lock()
-	defer setupMu.Unlock()
 	if r.Method != http.MethodPost {
 		writeAdminError(w, utils.ErrMethodNotAllowed, http.StatusMethodNotAllowed, "")
 		return
 	}
 
-	// 检测重置文件是否存在
-	if info, err := os.Stat(resetPasswordFile); err != nil || !info.Mode().IsRegular() {
-		utils.WriteErrorResponse(w, "ResetFileNotFound",
-			"密码重置文件不存在，请先在服务器执行 touch "+resetPasswordFile,
-			http.StatusForbidden)
-		return
-	}
+	// Do not hold the recovery mutex while an untrusted client sends JSON.
 
 	var req ResetPasswordRequest
 	if err := utils.ParseJSONBody(r, &req); err != nil {
@@ -230,17 +225,28 @@ func (h *Handler) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Consume authorization before changing credentials. A failed consume must
-	// never leave a successfully reusable reset capability.
-	if err := os.Remove(resetPasswordFile); err != nil {
-		utils.WriteErrorResponse(w, "ResetFileNotFound", "Cannot consume reset authorization", 403)
+	setupMu.Lock()
+	defer setupMu.Unlock()
+	token, markerInfo, err := readRecoveryMarker(true)
+	if err != nil {
+		utils.WriteErrorResponse(w, "ResetFileNotFound", "Local recovery authorization is unavailable; contact the server operator", http.StatusForbidden)
 		return
 	}
-	// 更新密码
-	if err := h.metadata.SetAdminPassword(req.NewPassword); err != nil {
-		utils.Error("重置密码失败", "error", err)
-		utils.WriteErrorResponse(w, "InternalError", "重置密码失败", http.StatusInternalServerError)
+	if err := h.metadata.ResetAdminPassword(token, req.NewPassword); err != nil {
+		if errors.Is(err, storage.ErrRecoveryConsumed) {
+			utils.WriteErrorResponse(w, "ResetFileNotFound", "Local recovery authorization has already been used", http.StatusForbidden)
+		} else {
+			utils.Error("重置密码失败", "error", err)
+			utils.WriteErrorResponse(w, "InternalError", "Password reset failed; the local authorization remains available for retry", http.StatusInternalServerError)
+		}
 		return
+	}
+	// Never remove a newly replaced operator marker. A leftover consumed marker
+	// is harmless, including when cleanup fails or the process dies here.
+	if current, err := os.Lstat(resetPasswordFile); err == nil && os.SameFile(markerInfo, current) {
+		if err := os.Remove(resetPasswordFile); err != nil {
+			utils.Warn("Recovery marker cleanup failed", "error", err)
+		}
 	}
 
 	// 清除所有会话（强制重新登录）
@@ -266,3 +272,59 @@ func ReloadConfigFromDB(metadata *storage.MetadataStore) {
 }
 
 var setupMu sync.Mutex
+
+// Empty markers created by existing `touch data/.reset_password` instructions
+// are upgraded to a durable random nonce before any credential change. Never
+// follow symlinks or silently replace malformed/nonempty operator files.
+func readRecoveryMarker(initialize bool) (string, os.FileInfo, error) {
+	info, err := os.Lstat(resetPasswordFile)
+	if err != nil {
+		return "", nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > 64 {
+		return "", nil, errors.New("invalid recovery marker")
+	}
+	flags := os.O_RDONLY
+	if initialize {
+		flags = os.O_RDWR
+	}
+	file, err := os.OpenFile(resetPasswordFile, flags, 0)
+	if err != nil {
+		return "", nil, err
+	}
+	defer file.Close()
+	actual, err := file.Stat()
+	if err != nil || !os.SameFile(info, actual) {
+		return "", nil, errors.New("recovery marker changed")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, 65))
+	if err != nil {
+		return "", nil, err
+	}
+	if len(data) == 0 && initialize {
+		nonce := make([]byte, 32)
+		if _, err := rand.Read(nonce); err != nil {
+			return "", nil, err
+		}
+		data = []byte(hex.EncodeToString(nonce))
+		if _, err := file.WriteAt(data, 0); err != nil {
+			return "", nil, err
+		}
+	}
+	if len(data) != 0 {
+		if len(data) != 64 {
+			return "", nil, errors.New("invalid recovery marker")
+		}
+		if _, err := hex.DecodeString(string(data)); err != nil {
+			return "", nil, err
+		}
+	}
+	if initialize {
+		// Also sync on retries: a previous request may have written the nonce but
+		// failed to flush it. Never commit its consumption until it is durable.
+		if err := file.Sync(); err != nil {
+			return "", nil, err
+		}
+	}
+	return string(data), info, nil
+}

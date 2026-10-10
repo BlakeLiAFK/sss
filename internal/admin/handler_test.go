@@ -656,12 +656,8 @@ func TestHandleResetPasswordCheck(t *testing.T) {
 			t.Fatalf("解析响应失败: %v", err)
 		}
 
-		// 文件应该不存在（测试环境）
-		if response.FilePath == "" {
-			t.Error("FilePath 不应为空")
-		}
-		if response.Command == "" {
-			t.Error("Command 不应为空")
+		if strings.Contains(rec.Body.String(), "file_path") || strings.Contains(rec.Body.String(), "command") {
+			t.Fatal("anonymous recovery check disclosed operator filesystem instructions")
 		}
 	})
 
